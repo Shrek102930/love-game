@@ -126,7 +126,7 @@ h2{font-size:18px;margin:0 0 8px}
 .center-title{font-size:15px;font-weight:800;color:#c04a72;text-shadow:0 1px 3px #fff;margin-top:2px}
 .center-sub{font-size:10.5px;color:#a05a78;text-shadow:0 1px 3px #fff;max-width:92%;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dice-area{display:flex;gap:8px;margin-top:8px;justify-content:center}
+.dice-area{display:flex;gap:12px;margin-top:8px;justify-content:center;perspective:600px}
 .die{width:38px;height:38px;border-radius:10px;background:#fff;box-shadow:0 3px 10px rgba(0,0,0,.15);
   display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);
   padding:6px;gap:1px}
@@ -139,9 +139,9 @@ h2{font-size:18px;margin:0 0 8px}
 @keyframes pop{from{transform:scale(.85);opacity:0}to{transform:scale(1);opacity:1}}
 
 /* 棋子层 */
-.pawn-layer{position:absolute;inset:0;pointer-events:none;z-index:5}
+.pawn-layer{position:absolute;inset:0;pointer-events:none;z-index:5;overflow:hidden}
 .pawn{position:absolute;width:7.6%;height:7.6%;border-radius:50%;border:2.5px solid #fff;
-  box-shadow:0 2px 8px rgba(0,0,0,.3);transition:left .17s ease,top .17s ease;
+  box-shadow:0 2px 8px rgba(0,0,0,.3);transition:left .20s ease,top .20s ease;
   background-size:cover;background-position:center;display:flex;align-items:center;justify-content:center;
   font-size:9px;font-weight:800;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.5)}
 .pawn.p0{box-shadow:0 0 0 2px #ff5e7e,0 2px 8px rgba(0,0,0,.3)}
@@ -239,6 +239,127 @@ h2{font-size:18px;margin:0 0 8px}
 .copyright .cr-line:last-child{transform:rotate(180deg)}
 .over-card .copyright{margin-top:16px}
 .card .copyright{margin-top:12px}
+
+
+/* ===== v3.1 游戏合集选择条 ===== */
+.arcade{background:linear-gradient(135deg,#fff0f6,#eef3ff);border:1.5px solid #f6dce8;
+  border-radius:16px;padding:10px 10px 12px;margin:12px 0 2px;text-align:left}
+.arcade-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px}
+.arcade-title{font-size:12.5px;font-weight:800;color:#c04a72}
+.arcade-by{font-size:9.5px;color:#b3a2b0}
+.arcade-games{display:flex;gap:7px}
+.game-card{flex:1;background:#fff;border-radius:12px;padding:9px 4px;display:flex;
+  flex-direction:column;align-items:center;gap:2px;border:2px solid transparent;
+  box-shadow:0 2px 8px rgba(160,100,140,.08);min-width:0}
+.game-card .gc-emoji{width:22px;height:22px;object-fit:contain;display:block}
+.game-card .gc-name{font-size:10.5px;font-weight:800;color:#5b5268;white-space:nowrap}
+.game-card .gc-tag{font-size:8.5px;color:#a89cb0;white-space:nowrap}
+.game-card.active{border-color:var(--pink);background:#fff6fa;box-shadow:0 3px 12px rgba(255,94,126,.18)}
+.game-card.active .gc-tag{color:var(--pink-d);font-weight:800}
+.game-card.soon{opacity:.55;filter:grayscale(.5)}
+.game-card.soon .gc-tag{background:#efeaf2;border-radius:8px;padding:0 5px}
+
+/* ===== v3.1 顶栏按钮 / 未读角标 ===== */
+.topbtns{display:flex;gap:4px;flex:none}
+.topbtns .icon-btn{position:relative;width:30px;height:30px;font-size:14px}
+.badge{position:absolute;top:-4px;right:-4px;min-width:16px;height:16px;line-height:16px;
+  padding:0 3px;border-radius:9px;background:var(--pink);color:#fff;font-size:9.5px;font-weight:800;
+  box-shadow:0 1px 4px rgba(0,0,0,.2)}
+.unread{display:inline-block;min-width:16px;padding:0 4px;border-radius:9px;background:var(--pink);
+  color:#fff;font-size:10px;font-weight:800;margin-left:4px}
+
+/* ===== v3.1 悄悄话弹窗式气泡 ===== */
+.chat-toast{position:fixed;top:56px;left:50%;transform:translateX(-50%);z-index:95;
+  width:min(300px,86vw);background:#fff;border-radius:16px;padding:10px 13px;
+  box-shadow:0 8px 26px rgba(180,80,120,.28);border:1.5px solid #ffd9e6;
+  animation:chatIn .3s cubic-bezier(.2,1.4,.4,1);cursor:pointer}
+@keyframes chatIn{from{transform:translateX(-50%) translateY(-14px) scale(.92);opacity:0}
+  to{transform:translateX(-50%) translateY(0) scale(1);opacity:1}}
+.ct-head{display:flex;align-items:center;gap:5px;font-size:12px}
+.ct-ico{font-size:14px}
+.ct-tag{margin-left:auto;font-size:9px;color:#fff;background:var(--pink);border-radius:8px;padding:1px 6px}
+.ct-body{font-size:13px;color:#4a4256;line-height:1.5;margin:6px 0 4px;word-break:break-all}
+.ct-tap{font-size:10px;color:#b3a2b0;text-align:right}
+.chat-msg{padding:3px 0;border-bottom:1px solid #f7f0f5}
+
+/* ===== v3.1 设置弹窗 ===== */
+.settings-card{max-width:360px}
+.set-list{display:flex;flex-direction:column;gap:7px;margin:12px 0}
+.set-row{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  background:#f8f5fa;color:#5b5268;padding:12px 13px;font-size:13.5px;text-align:left;border-radius:12px}
+.set-row span{font-size:10.5px;color:#a89cb0;font-weight:600}
+.set-row.warn{background:#fff6e9;color:#b8791f}
+.set-row.danger{background:#fff0f2;color:#c0445f}
+.set-help{background:#fff8fb;border:1px solid #f9e2ec;border-radius:12px;padding:10px 12px;
+  font-size:10.5px;line-height:1.85;color:#8a7186;text-align:left;margin-bottom:12px}
+.set-help b{color:#c04a72}
+
+/* ===== v3.1 人生选择弹窗 ===== */
+.choice-list{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+.choice-list button{background:#f8f5fa;color:#5b5268;padding:12px;font-size:13px;text-align:left;
+  border:1.5px solid transparent;border-radius:12px}
+.choice-list button.picked{background:var(--pink-s);color:var(--pink-d);border-color:var(--pink);font-weight:800}
+
+/* ===== v3.1 格子真实图片 + 新格类型 ===== */
+.tile .ti{width:15px;height:15px;display:flex;align-items:center;justify-content:center;line-height:1}
+.tile .ti img{width:100%;height:100%;object-fit:contain;display:block}
+.tile.corner .ti{width:18px;height:18px}
+.tile.bank{background:#fff6e2}
+.tile.bank .tn{color:#b8791f}
+.tile.life{background:#f0eaff}
+.tile.life .tn{color:#8a5fc0}
+.tile.portal{background:linear-gradient(135deg,#e8e0ff,#ffe0f2);box-shadow:inset 0 0 0 1.5px #c9a6f0}
+.tile.portal .ti{animation:swirl 3s linear infinite}
+@keyframes swirl{to{transform:rotate(360deg)}}
+
+/* ===== v3.1 位置气泡「你在这里」 ===== */
+.loc-tip{position:absolute;z-index:8;transform:translate(-50%,-50%);pointer-events:none;
+  background:rgba(255,255,255,.97);border:1.5px solid var(--pink);border-radius:20px;
+  padding:3px 9px;box-shadow:0 3px 12px rgba(220,90,140,.28);white-space:nowrap;
+  display:flex;align-items:center;gap:4px;font-size:9.5px;color:#5b5268;
+  transition:left .2s ease,top .2s ease;max-width:46%;overflow:hidden}
+.loc-tip b{color:var(--pink-d);font-size:10px;max-width:80px;overflow:hidden;text-overflow:ellipsis}
+.loc-tip .lt-pin{font-size:10px}
+.loc-tip .lt-who{color:#a89cb0;font-size:8.5px}
+.loc-tip.hidden{display:none}
+
+/* ===== v3.1 3D 骰子：转动 3D，落定展平 2D ===== */
+.die3d{--ds:38px;width:var(--ds);height:var(--ds);position:relative;transform-style:preserve-3d}
+.die3d .cube{position:absolute;inset:0;transform-style:preserve-3d;
+  transition:transform .4s cubic-bezier(.3,.8,.4,1)}
+.die3d .face{position:absolute;inset:0;background:#fff;border-radius:9px;
+  box-shadow:0 3px 10px rgba(0,0,0,.16),inset 0 0 0 1px #ffe3ec;
+  display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);
+  padding:6px;gap:1px;backface-visibility:hidden}
+.die3d .face .pip{width:6px;height:6px;border-radius:50%;background:transparent;align-self:center;justify-self:center}
+.die3d .face .pip.on{background:var(--pink)}
+.die3d .f-front {transform:rotateY(0deg)   translateZ(calc(var(--ds)/2))}
+.die3d .f-right {transform:rotateY(90deg)  translateZ(calc(var(--ds)/2))}
+.die3d .f-back  {transform:rotateY(180deg) translateZ(calc(var(--ds)/2))}
+.die3d .f-left  {transform:rotateY(-90deg) translateZ(calc(var(--ds)/2))}
+.die3d .f-top   {transform:rotateX(90deg)  translateZ(calc(var(--ds)/2))}
+.die3d .f-bottom{transform:rotateX(-90deg) translateZ(calc(var(--ds)/2))}
+.die3d.tumbling .cube{animation:tumble .95s cubic-bezier(.35,.1,.3,1) forwards}
+@keyframes tumble{0%{transform:rotateX(0) rotateY(0) rotateZ(0)}
+  100%{transform:rotateX(760deg) rotateY(1120deg) rotateZ(40deg)}}
+.die3d.flat{transform-style:flat}
+.die3d.flat .cube{transform:none !important;animation:none}
+.die3d.flat .face:not(.f-front){display:none}
+.die3d.flat .f-front{transform:none;position:relative;box-shadow:0 3px 10px rgba(0,0,0,.15)}
+
+/* ===== v3.1 玩家资产行 ===== */
+.passets{font-size:9.5px;color:#a2879d;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ===== v3.1 极窄屏 ===== */
+@media (max-width:360px){
+  .die3d{--ds:32px}
+  .tile .ti{width:12px;height:12px}
+  .tile.corner .ti{width:15px;height:15px}
+  .arcade-games{gap:5px}
+  .game-card .gc-name{font-size:9.5px}
+  .game-card .gc-tag{font-size:8px}
+  .topbtns .icon-btn{width:27px;height:27px;font-size:13px}
+}
 
 /* ===== 极窄屏 ===== */
 @media (max-width:360px){

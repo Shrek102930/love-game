@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-<title>💕 双人大富翁</title>
-<meta name="app-version" content="v3.0" />
+<title>💕 双人游戏合集 · 情侣大富翁</title>
+<meta name="app-version" content="v3.1" />
 <meta name="theme-color" content="#ff8faa" />
-<link rel="stylesheet" href="/style.css?v=4" />
+<link rel="stylesheet" href="/style.css?v=5" />
 </head>
 <body>
 
@@ -21,6 +21,31 @@
       <div class="brand-avatars"><img src="/assets/avatar-boy.png" alt=""><img src="/assets/avatar-girl.png" alt=""></div>
       <h1>双人大富翁</h1>
       <p class="sub">和 TA 一起，绕着爱心城市走一圈 💕</p>
+    </div>
+
+    <!-- 游戏合集：一个链接里挑选小游戏 -->
+    <div class="arcade">
+      <div class="arcade-head">
+        <span class="arcade-title">🎮 双人游戏合集</span>
+        <span class="arcade-by">by 寻找格陵兰</span>
+      </div>
+      <div class="arcade-games" id="gameKindBtns">
+        <button class="game-card active" data-v="monopoly">
+          <img class="gc-emoji" src="/assets/ic-dice.png" alt="" />
+          <span class="gc-name">情侣大富翁</span>
+          <span class="gc-tag">40 格 · 立即玩</span>
+        </button>
+        <button class="game-card soon" disabled>
+          <img class="gc-emoji" src="/assets/ic-gift.png" alt="" />
+          <span class="gc-name">默契你画我猜</span>
+          <span class="gc-tag">敬请期待</span>
+        </button>
+        <button class="game-card soon" disabled>
+          <img class="gc-emoji" src="/assets/ic-chance.png" alt="" />
+          <span class="gc-name">情侣答题 PK</span>
+          <span class="gc-tag">敬请期待</span>
+        </button>
+      </div>
     </div>
 
     <label>你的昵称</label>
@@ -109,7 +134,12 @@
     <div class="topbar">
       <div class="room">房间 <b id="gCode">------</b></div>
       <div class="turn" id="gTurn">准备中</div>
-      <button id="soundBtn" class="icon-btn" title="音效开关">🔊</button>
+      <div class="topbtns">
+        <button id="chatBtn" class="icon-btn" title="悄悄话">💬<span id="chatBadge" class="badge hidden">0</span></button>
+        <button id="soundBtn" class="icon-btn" title="音效开关">🔊</button>
+        <button id="settingsBtn" class="icon-btn" title="设置">⚙️</button>
+        <button id="exitBtn" class="icon-btn" title="返回主菜单">🏠</button>
+      </div>
     </div>
 
     <!-- 双方玩家卡 -->
@@ -126,8 +156,8 @@
           <div class="center-title" id="centerTitle">双人大富翁</div>
           <div class="center-sub" id="centerSub">一起出发吧</div>
           <div class="dice-area" id="diceArea">
-            <div class="die" id="die1" data-v="1"></div>
-            <div class="die" id="die2" data-v="1"></div>
+            <div class="die3d flat" id="die1" data-v="1"></div>
+            <div class="die3d flat" id="die2" data-v="1"></div>
           </div>
           <div class="center-event" id="centerEvent"></div>
         </div>
@@ -154,8 +184,8 @@
     </details>
 
     <!-- 聊天 -->
-    <details class="panel">
-      <summary>💬 悄悄话</summary>
+    <details class="panel" id="chatPanel">
+      <summary>💬 悄悄话 <span id="chatUnread" class="unread hidden">0</span></summary>
       <div class="chatlog" id="chatList"></div>
       <div class="chatrow"><input id="chatInput" maxlength="40" placeholder="说点什么…" /><button id="chatSend">发送</button></div>
     </details>
@@ -168,9 +198,37 @@
   </div>
 </div>
 
-<!-- ============ 弹窗层 ============ -->
+<!-- ============ 通用弹窗层：买地 / 拍卖 / 小游戏 / 人生选择 ============ -->
 <div id="modal" class="modal hidden">
   <div class="modal-card" id="modalCard"></div>
+</div>
+
+<!-- ============ 设置弹窗 ============ -->
+<div id="settings" class="modal hidden">
+  <div class="modal-card settings-card">
+    <div class="mini-tag">⚙️ 设置</div>
+    <h1 style="margin:8px 0 2px">游戏设置</h1>
+    <p class="m-sub" id="setRoomInfo">房间 ------</p>
+    <div class="set-list">
+      <button id="setSound" class="set-row">🔊 音效 <span id="setSoundVal">开</span></button>
+      <button id="setRestart" class="set-row warn">🔄 重开本局 <span>双方回到等待页</span></button>
+      <button id="setExit" class="set-row danger">🏠 退出房间 <span>回主菜单</span></button>
+    </div>
+    <div class="set-help">
+      <b>玩法速览</b><br>
+      40 格环形棋盘 · 集齐同色组租金翻倍、建房至酒店<br>
+      空地不买进拍卖 · 缺钱可抵押 · 经过起点领工资<br>
+      🏦 银行存钱每圈 +8% 利息 · 💳 借款每圈自动还 100<br>
+      🚗 买车后几次多走 2 格 · 🌀 传送门是成对捷径<br>
+      🎭 人生驿站要做选择 · 💗 心跳模式攒默契共同获胜
+    </div>
+    <button id="setClose" class="ghost big">关闭</button>
+    <footer class="copyright">
+      <span class="cr-line"></span>
+      <span>© 2026 <b>寻找格陵兰</b> · 版权所有</span>
+      <span class="cr-line"></span>
+    </footer>
+  </div>
 </div>
 
 <!-- ============ 结束屏 ============ -->
@@ -202,6 +260,6 @@
 </div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="/game.js?v=3"></script>
+<script src="/game.js?v=4"></script>
 </body>
 </html>
