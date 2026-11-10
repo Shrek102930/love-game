@@ -230,6 +230,16 @@ h2{font-size:18px;margin:0 0 8px}
 .confetti{position:absolute;width:9px;height:14px;border-radius:2px;animation:fall 1.8s linear forwards}
 @keyframes fall{to{transform:translateY(105vh) rotate(720deg);opacity:0}}
 
+/* ===== 版权署名 ===== */
+.copyright{display:flex;align-items:center;justify-content:center;gap:8px;
+  margin:14px auto 2px;font-size:11px;color:#b3a8b8;letter-spacing:.3px;
+  line-height:1.6;user-select:none}
+.copyright b{color:#a2879d;font-weight:700}
+.copyright .cr-line{width:20px;height:1px;background:linear-gradient(90deg,transparent,#e3ccd9)}
+.copyright .cr-line:last-child{transform:rotate(180deg)}
+.over-card .copyright{margin-top:16px}
+.card .copyright{margin-top:12px}
+
 /* ===== 极窄屏 ===== */
 @media (max-width:360px){
   .game-wrap{padding:6px 5px 30px}
