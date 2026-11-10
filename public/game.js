@@ -1,4 +1,4 @@
-/* 💕 双人游戏合集 v3.1 —— 前端逻辑 */
+/* 💕 双人游戏合集 v3.2 —— 前端逻辑（头像自选 / 掷骰两步走 / 双人实时互动） */
 (function () {
 'use strict';
 
@@ -12,7 +12,7 @@ try { const j = JSON.parse(localStorage.getItem(SKEY) || '{}'); if (j && j.code)
 const saveSession = () => { try { localStorage.setItem(SKEY, JSON.stringify(S)); } catch (e) {} };
 const clearSession = () => { S = { code: null, token: null, name: '' }; try { localStorage.removeItem(SKEY); } catch (e) {} };
 
-let sel = { gameKind: 'monopoly', theme: 'city', mode: 'classic', pace: 'standard' };
+let sel = { gameKind: 'monopoly', theme: 'city', mode: 'classic', pace: 'standard', avatar: 'boy' };
 let board = null;          // 静态棋盘定义
 let st = null;             // 最新 state
 let tileEls = [], pawnEls = [];
@@ -25,6 +25,18 @@ let rollTimeout = null;
 let overlayTimer = null;
 let unreadChat = 0;
 let locTipEl = null;
+/* v3.2 头像 / 掷骰两步 / 互动相关状态 */
+let myAvatarData = null;                 // 自定义头像 dataURL（本地）
+const avatarImages = {};                 // 房间内自定义头像缓存：playerIdx -> dataURL
+let lastDiceKey = '', diceAnimating = false;
+const AKEY = 'love_monopoly_avatar_v32';
+const AVATAR_LIST = [
+  { id: 'boy', name: '男生' }, { id: 'girl', name: '女生' },
+  { id: 'cat', name: '奶猫' }, { id: 'bunny', name: '兔兔' },
+  { id: 'bear', name: '小熊' }, { id: 'fox', name: '狐狸' },
+  { id: 'panda', name: '熊猫' }, { id: 'penguin', name: '企鹅' },
+  { id: 'frog', name: '青蛙' }, { id: 'unicorn', name: '独角兽' },
+];
 
 /* ---------- Socket ---------- */
 const socket = io({
@@ -171,7 +183,7 @@ function syncWaitBtns() {
 $('createBtn').onclick = () => {
   const name = ($('nameInput').value || '').trim() || '玩家';
   S.name = name; beep('click');
-  socket.emit('createRoom', { name, ...sel });
+  socket.emit('createRoom', { name, ...sel });   // sel.avatar 随建房下发
   $('lobbyMsg').textContent = '正在创建房间…';
 };
 $('joinBtn').onclick = () => {
@@ -179,7 +191,7 @@ $('joinBtn').onclick = () => {
   if (code.length !== 6) { $('lobbyMsg').textContent = '请输入 6 位房间号'; return; }
   const name = ($('nameInput').value || '').trim() || '玩家';
   S.name = name; beep('click');
-  socket.emit('joinRoom', { code, name });
+  socket.emit('joinRoom', { code, name, avatar: sel.avatar });
   $('lobbyMsg').textContent = '正在加入…';
 };
 $('copyCode').onclick = () => {
@@ -199,10 +211,20 @@ $('chatInput') && $('chatInput').addEventListener('keydown', (e) => { if (e.key 
 
 /* ---------- Socket 事件 ---------- */
 socket.on('errorMsg', (m) => { $('lobbyMsg').textContent = m; toast('⚠️ ' + m); });
-socket.on('created', ({ code }) => { S.code = code; saveSession(); $('roomCode').textContent = code; $('gCode').textContent = code; show('waiting'); syncWaitBtns(); });
-socket.on('joined', ({ code }) => { S.code = code; saveSession(); $('roomCode').textContent = code; $('gCode').textContent = code; show('waiting'); });
+socket.on('created', ({ code }) => { S.code = code; saveSession(); $('roomCode').textContent = code; $('gCode').textContent = code; show('waiting'); syncWaitBtns();
+  if (sel.avatar === 'custom' && myAvatarData) socket.emit('setAvatar', { avatar: 'custom', data: myAvatarData }); });
+socket.on('joined', ({ code }) => { S.code = code; saveSession(); $('roomCode').textContent = code; $('gCode').textContent = code; show('waiting');
+  if (sel.avatar === 'custom' && myAvatarData) socket.emit('setAvatar', { avatar: 'custom', data: myAvatarData }); });
 socket.on('reconnected', ({ code }) => { S.code = code; hideOverlay(); });
 socket.on('board', (b) => { board = b; tryRender(); });
+socket.on('avatarImage', ({ idx, data }) => {
+  if (data) avatarImages[idx] = data; else delete avatarImages[idx];
+  tryRender();
+});
+socket.on('interactFx', (d) => {
+  showInteractFx(d); toast((d.emoji || '💕') + ' ' + (d.text || ''));
+  beep(d.kind === 'heart' ? 'heart' : 'coin');
+});
 socket.on('state', (s) => {
   st = s;
   if (s.players) { const me = s.players.find((p) => p.isYou); if (me && me.token && !S.token) { S.token = me.token; S.code = s.code; saveSession(); } }
@@ -259,6 +281,94 @@ function onFirstConnect() {
   }
 }
 
+/* ========== v3.2 头像系统 ========== */
+function builtinAvatarSrc(id) {
+  if (id === 'boy' || id === 'girl') return `/assets/avatar-${id}.png`;
+  return `/assets/av-${id}.svg`;
+}
+function avatarSrc(p, idx) {
+  const av = p && p.avatar;
+  if (av === 'custom') return avatarImages[idx] || builtinAvatarSrc(idx === 1 ? 'girl' : 'boy');
+  if (av === 'boy' || av === 'girl') return builtinAvatarSrc(av);
+  if (av && AVATAR_LIST.some((a) => a.id === av)) return builtinAvatarSrc(av);
+  return builtinAvatarSrc(idx === 1 ? 'girl' : 'boy');
+}
+function applyPawnAvatars() {
+  if (!st || !pawnEls) return;
+  st.players.forEach((p, i) => {
+    if (pawnEls[i]) pawnEls[i].style.backgroundImage = `url("${avatarSrc(p, i)}")`;
+  });
+}
+function loadAvatarLocal() {
+  try { const j = JSON.parse(localStorage.getItem(AKEY) || '{}');
+    if (j.avatar) { sel.avatar = j.avatar; myAvatarData = j.data || null; } } catch (e) {}
+}
+function saveAvatarLocal() {
+  try { localStorage.setItem(AKEY, JSON.stringify({ avatar: sel.avatar, data: myAvatarData })); } catch (e) {}
+}
+function updateAvatarPreview() {
+  const img = $('avatarPickImg'), nm = $('avatarPickName');
+  if (img) img.src = sel.avatar === 'custom' ? (myAvatarData || builtinAvatarSrc('boy')) : builtinAvatarSrc(sel.avatar);
+  const f = AVATAR_LIST.find((a) => a.id === sel.avatar);
+  if (nm) nm.textContent = sel.avatar === 'custom' ? '自定义头像' : (f ? f.name : '男生');
+}
+function renderAvatarGrid() {
+  const g = $('avatarGrid'); if (!g) return;
+  g.innerHTML = '';
+  AVATAR_LIST.forEach((a) => {
+    const b = el('button', 'av-item' + (sel.avatar === a.id ? ' active' : ''),
+      `<img src="${builtinAvatarSrc(a.id)}" alt=""><span>${a.name}</span>`);
+    b.onclick = () => pickAvatar(a.id);
+    g.appendChild(b);
+  });
+  if (sel.avatar === 'custom' && myAvatarData) {
+    const b = el('button', 'av-item active',
+      `<img src="${myAvatarData}" alt=""><span>我的照片</span>`);
+    b.onclick = () => {};
+    g.appendChild(b);
+  }
+}
+function pickAvatar(id) {
+  sel.avatar = id; myAvatarData = null;
+  saveAvatarLocal(); updateAvatarPreview(); renderAvatarGrid();
+  if (S.code) socket.emit('setAvatar', { avatar: id });
+  beep('click');
+}
+function openAvatarModal() { renderAvatarGrid(); $('avatarModal').classList.remove('hidden'); }
+function closeAvatarModal() { $('avatarModal').classList.add('hidden'); }
+function compressImage(file, size, cb) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas'); c.width = c.height = size;
+      const ctx = c.getContext('2d');
+      const s = Math.min(img.width, img.height);
+      ctx.drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, size, size);
+      cb(c.toDataURL('image/jpeg', 0.82));
+    };
+    img.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+/* ========== v3.2 双人互动飘动画 ========== */
+function showInteractFx(d) {
+  const layer = $('interactFxLayer'); if (!layer) return;
+  for (let i = 0; i < 8; i++) {
+    const s = el('div', 'i-fx', d.emoji || '💕');
+    s.style.left = (8 + Math.random() * 84) + 'vw';
+    s.style.fontSize = (20 + Math.random() * 24) + 'px';
+    s.style.animationDelay = (Math.random() * 0.5) + 's';
+    layer.appendChild(s);
+    setTimeout(() => s.remove(), 2600);
+  }
+  const big = el('div', 'i-fx-big',
+    `<span class="ifb-emoji">${d.emoji || '💕'}</span><b>${escapeHtml(d.from || 'TA')}</b><small>${escapeHtml(d.text || '')}</small>`);
+  layer.appendChild(big);
+  setTimeout(() => big.remove(), 2300);
+}
+
 /* ---------- 渲染总入口（DOM 复用） ---------- */
 function tryRender() {
   if (!st) return;
@@ -285,7 +395,7 @@ function renderWaiting() {
   $('roomCode').textContent = st.code || S.code || '------';
   const box = $('waitPlayers'); box.innerHTML = '';
   st.players.forEach((p) => {
-    const d = el('div', 'pbox', `<img class="pav" src="/assets/avatar-${p.avatar === 'girl' ? 'girl' : 'boy'}.png"><div class="pinfo"><div class="pname">${escapeHtml(p.name)}</div><div class="pmeta">${p.connected ? '✅ 已就位' : '⏳ 掉线'}</div></div>`);
+    const d = el('div', 'pbox', `<img class="pav" src="${avatarSrc(p, st.players.indexOf(p))}"><div class="pinfo"><div class="pname">${escapeHtml(p.name)}</div><div class="pmeta">${p.connected ? '✅ 已就位' : '⏳ 掉线'}</div></div>`);
     d.style.maxWidth = '190px'; box.appendChild(d);
   });
   const n = st.players.length, isHost = st.players[0] && st.players[0].isYou;
@@ -345,6 +455,7 @@ function buildBoard() {
   boardBuilt = true;
   setDie($('die1'), 1); setDie($('die2'), 1);
   placePawns(st.players.map((p) => p.pos), true);
+  applyPawnAvatars();
   renderLocTip(st.game.current, true);
 }
 
@@ -397,20 +508,25 @@ function renderLocTip(curIdx) {
   renderLocTipAt(st.players[curIdx].pos, curIdx);
 }
 
-/* 逐格移动动画（掩盖网络往返） */
+/* v3.2 掷骰动画（diceId 去重）：3D 立方体翻滚 ~950ms → 落定展平 2D 显示点数，人物不动 */
+async function playDice(dice) {
+  if (!dice || diceAnimating) return;
+  diceAnimating = true; beep('dice');
+  const die1 = $('die1'), die2 = $('die2');
+  [die1, die2].forEach((node) => { if (node) { node.classList.remove('flat'); node.classList.add('tumbling'); } });
+  await sleep(950);
+  [die1, die2].forEach((node, i) => {
+    if (!node) return;
+    node.classList.remove('tumbling');
+    setDie(node, dice[i]);         // 落定 2D（setDie 加回 .flat）
+  });
+  diceAnimating = false;
+  renderControls(); renderCenter();   // 骰子停稳后才出现「前进」按钮
+}
+/* v3.2 逐格移动动画：点「前进」后才播放（不再翻骰子） */
 async function playMove(steps) {
   if (!steps || !steps.length || animating) return;
-  animating = true; beep('dice');
-  const die1 = $('die1'), die2 = $('die2');
-  // v3.1：3D 立方体翻滚 ~950ms → 落定展平成 2D 点阵
-  [die1, die2].forEach((n) => { if (n) { n.classList.remove('flat'); n.classList.add('tumbling'); } });
-  await sleep(950);
-  const d = st.game.dice;
-  [die1, die2].forEach((n, i) => {
-    if (!n) return;
-    n.classList.remove('tumbling');
-    setDie(n, d[i]);               // setDie 加回 .flat = 结果态 2D
-  });
+  animating = true;
   for (let k = 0; k < steps.length; k++) {
     const pawn = pawnEls[lastMover];
     if (pawn) {
@@ -420,7 +536,7 @@ async function playMove(steps) {
       beep('step');
     }
     renderLocTipAt(steps[k], lastMover);
-    await sleep(200);              // v3.1 放慢：165ms → 200ms
+    await sleep(200);
   }
   animating = false;
   renderLocTip(st.game.current);
@@ -472,13 +588,14 @@ function renderPlayers() {
     if (!p.connected) tags.push('📴 掉线');
     if (p.items && p.items.freeRent) tags.push(`🛡️ 免租券×${p.items.freeRent}`);
     const props = Object.keys(p.props || {}).length;
-    d.innerHTML = `<img class="pav" src="/assets/avatar-${p.avatar === 'girl' ? 'girl' : 'boy'}.png">
+    d.innerHTML = `<img class="pav" src="${avatarSrc(p, i)}">
       <div class="pinfo"><div class="pname">${escapeHtml(p.name)}</div>
       <div class="pmoney">${p.money}</div>
       <div class="pmeta">🏠${props} 地 · 净 ${p.net}${tags.length ? ' · ' + tags.join(' ') : ''}</div>
       <div class="passets">🏦${p.savings || 0} · 💳${p.loan || 0} · 🚗${p.cars || 0}${p.carBoost > 0 ? ' ⚡' + p.carBoost : ''}</div></div>
       ${p.isYou ? '<span class="you-tag">你</span>' : ''}`;
   });
+  applyPawnAvatars();
 }
 function renderBoardDyn() {
   const dyn = st.game.tileDyn || [];
@@ -500,7 +617,7 @@ function renderCenter() {
   sub.textContent = g.mode === 'heart' ? `默契值 ${g.heart}/${g.heartTarget} 💗` :
     (g.modeName || '') + ' · 40 格环游';
   if (ev) ev.textContent = fx && fx.text ? fx.text : (g.lastEvent && g.lastEvent.text ? g.lastEvent.text : '一起出发吧 💕');
-  if (!animating && $('die1') && g.dice && g.dice[0]) { setDie($('die1'), g.dice[0]); setDie($('die2'), g.dice[1]); }
+  // v3.2：骰子点数由 diceId 动画（playDice）落定显示，此处不再覆盖 3D 翻滚
   const eb = $('eventBar');
   if (eb) eb.textContent = fx && fx.text ? fx.text : (g.lastEvent && g.lastEvent.text ? g.lastEvent.text : '🎲 开始新的一回合');
 }
@@ -515,6 +632,29 @@ function renderControls() {
     const txt = { await_mini: '🎮 小游戏进行中…', auction: '🔨 拍卖进行中…',
       await_buy: '🏠 等待购买决定…', await_choice: '🎭 等待人生选择…' }[g.phase];
     c.appendChild(el('div', 'ctrl-row', `<div style="flex:1;text-align:center;font-size:12.5px;color:#8a7186;padding:8px">${txt}</div>`));
+    return;
+  }
+  // v3.2 掷骰两步走：await_move 阶段显示「前进 N 步」，点一下人物才走
+  if (g.phase === 'await_move') {
+    if (diceAnimating) { c.appendChild(el('div', 'ctrl-row', `<div class="roll-btn waiting" style="text-align:center">🎲 骰子落定中…</div>`)); return; }
+    const mover = st.players[g.current];
+    const n = g.pendingSteps || 0;
+    if (mover && mover.isYou) {
+      const b = el('button', 'roll-btn advance-btn', `👣 前进 ${n} 步`);
+      b.id = 'advanceBtn';
+      b.onclick = () => {
+        if (animating) return;
+        beep('click');
+        b.textContent = '👣 出发中…'; b.disabled = true;
+        $('eventBar').textContent = '👣 出发！';
+        clearTimeout(rollTimeout);
+        rollTimeout = setTimeout(() => { if (b.isConnected) { b.disabled = false; b.textContent = `👣 前进 ${n} 步`; } }, 5000);
+        socket.emit('confirmMove');
+      };
+      c.appendChild(b);
+    } else {
+      c.appendChild(el('div', 'ctrl-row', `<div class="roll-btn waiting" style="text-align:center">⏳ 等 ${escapeHtml(mover ? mover.name : '对方')} 点「前进」…</div>`));
+    }
     return;
   }
   if (g.phase !== 'await_roll') return;
@@ -536,7 +676,9 @@ function renderControls() {
     b.textContent = '🎲 掷骰中…'; b.disabled = true;
     $('eventBar').textContent = '🎲 掷骰中…';
     clearTimeout(rollTimeout);
-    rollTimeout = setTimeout(() => { if (b.isConnected) { b.textContent = '🎲 掷骰子'; b.disabled = false; } }, 6000); // 卡住自愈（v3.1 动画变慢）
+    rollTimeout = setTimeout(() => { // 卡住自愈：只有仍停在 await_roll 才恢复掷骰按钮
+      if (b.isConnected && st && st.game && st.game.phase === 'await_roll') { b.textContent = '🎲 掷骰子'; b.disabled = false; }
+    }, 6000);
     socket.emit('rollDice');
   };
   c.appendChild(b);
@@ -641,7 +783,8 @@ function renderChoiceModal(mc, g) {
   const c = g.choice; if (!c) return;
   const me = st.players.find((p) => p.isYou);
   const isMine = me && st.players[c.byIdx] && st.players[c.byIdx].isYou;
-  mc.innerHTML = `<div class="mini-tag">${c.kind === 'bank' ? '🏦 爱心银行' : '🎭 人生驿站'}</div>
+  const CTAG = { bank: '🏦 爱心银行', life: '🎭 人生驿站', fork: '🛤️ 岔路口' }[c.kind] || '🎭 人生驿站';
+  mc.innerHTML = `<div class="mini-tag">${CTAG}</div>
     <h1 style="margin:10px 0 2px">${escapeHtml(c.title)}</h1>
     ${c.lifeQ ? `<div class="mini-q">${escapeHtml(c.lifeQ)}</div>` : ''}
     <p class="m-sub">${c.desc}</p>
@@ -659,7 +802,7 @@ function renderChoiceModal(mc, g) {
     socket.emit('choicePick', { value: b.dataset.v });
   };
 }
-const MINI_TAG = { rps: '✊ 石头剪刀布', quiz: '🧠 答题挑战', wheel: '🎡 幸运转盘', bond: '💞 默契问答', coop: '🤝 双人任务', dare: '💌 默契大冒险' };
+const MINI_TAG = { rps: '✊ 石头剪刀布', quiz: '🧠 答题挑战', wheel: '🎡 幸运转盘', bond: '💞 默契问答', coop: '🤝 双人任务', dare: '💌 默契大冒险', story: '💞 共同决定' };
 function renderMiniModal(mc, g) {
   const m = g.mini; if (!m) return;
   const mcTag = MINI_TAG[m.kind] || '🎮 小游戏';
@@ -704,7 +847,12 @@ function renderOver() {
 /* ---------- 特效 ---------- */
 function handleFx() {
   const g = st.game;
-  // 逐格移动（用 ver+moveSteps 组合去重）
+  // v3.2 掷骰动画：diceId 去重，翻骰子显示点数（人物不动）
+  if (g.diceId && g.dice && g.dice[0]) {
+    const dk = 'dice' + g.diceId;
+    if (dk !== lastDiceKey) { lastDiceKey = dk; playDice(g.dice); }
+  }
+  // 逐格移动（moveId 去重，点「前进」后才有 moveSteps）
   if (g.moveSteps && g.moveSteps.length && g.moveId) {
     const mk = 'mv' + g.moveId;
     if (mk !== lastMoveKey) {
@@ -757,5 +905,35 @@ function toast(msg) {
   t.style.cssText = 'position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:90;background:#fff;color:#d9436a;padding:8px 14px;border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,.15);font-size:13px;font-weight:700';
   document.body.appendChild(t); setTimeout(() => t.remove(), 2400);
 }
+/* ========== v3.2 初始化与交互绑定 ========== */
+loadAvatarLocal(); updateAvatarPreview();
+$('avatarPickBtn') && $('avatarPickBtn').addEventListener('click', () => { beep('click'); openAvatarModal(); });
+$('setAvatar') && $('setAvatar').addEventListener('click', () => { beep('click'); closeSettings(); openAvatarModal(); });
+$('avatarClose') && $('avatarClose').addEventListener('click', closeAvatarModal);
+$('avatarModal') && $('avatarModal').addEventListener('click', (e) => { if (e.target.id === 'avatarModal') closeAvatarModal(); });
+$('avatarFile') && $('avatarFile').addEventListener('change', (e) => {
+  const file = e.target.files && e.target.files[0]; if (!file) return;
+  compressImage(file, 128, (dataUrl) => {
+    myAvatarData = dataUrl; sel.avatar = 'custom';
+    saveAvatarLocal(); updateAvatarPreview(); renderAvatarGrid();
+    if (S.code) socket.emit('setAvatar', { avatar: 'custom', data: dataUrl });
+    toast('✅ 头像换好啦'); beep('coin');
+  });
+  e.target.value = '';
+});
+$('interactBtns') && $('interactBtns').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  const k = b.dataset.k; beep('click');
+  if (k === 'money') { $('moneySheet').classList.remove('hidden'); return; }
+  socket.emit('interact', { kind: k });
+});
+$('moneyOpts') && $('moneyOpts').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  socket.emit('interact', { kind: 'money', amount: Number(b.dataset.v) });
+  $('moneySheet').classList.add('hidden'); beep('coin');
+});
+$('moneyCancel') && $('moneyCancel').addEventListener('click', () => $('moneySheet').classList.add('hidden'));
+$('moneySheet') && $('moneySheet').addEventListener('click', (e) => { if (e.target.id === 'moneySheet') $('moneySheet').classList.add('hidden'); });
+
 window.addEventListener('error', (e) => { console.warn('[game] error', e.message); });
 })();

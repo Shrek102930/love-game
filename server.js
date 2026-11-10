@@ -1,10 +1,11 @@
 /**
- * 💕 双人游戏合集 v3.1 —— 服务器（权威节点）
+ * 💕 双人游戏合集 v3.2 —— 服务器（权威节点）
  * 40 格环形棋盘 / 色组垄断·建房酒店 / 拍卖·抵押 / 6 种小游戏 /
  * 4 种模式 / 默契值 / 逐格移动序列 / 瘦身同步+版本号 / 断线重连+存档
- * v3.1: 模拟人生(存钱取息/借贷/转赠/买车/人生事件) / 传送门捷径 /
- *       通用人生选择弹窗 / 悄悄话未读 / 退出·设置·重开 / 位置气泡 / 3D 骰子 /
- *       gameKind 游戏合集分派 / BOARD_VERSION=4
+ * v3.1: 模拟人生 / 传送门 / 人生选择 / 悄悄话 / 退出设置 / 位置气泡 / 3D 骰子
+ * v3.2: 多组头像自选+自定义上传 / 掷骰与前进两步走(await_move) /
+ *       双人实时互动(比心·送礼·送钱·戳戳·猜拳) / 共同决策 story / 岔路 fork /
+ *       BOARD_VERSION=5
  *
  * 架构：多文件。前端在 public/（express.static 托管），图片可缓存。
  * 运行：node server.js  (PORT 环境变量覆盖，默认 3000)
@@ -22,7 +23,7 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 const PORT = process.env.PORT || 3000;
 const SAVE_DIR = path.join(__dirname, 'saves');
 if (!fs.existsSync(SAVE_DIR)) fs.mkdirSync(SAVE_DIR, { recursive: true });
-const BOARD_VERSION = 4; // v3.1：新增 bank/life/portal 格与 choice/资产字段，旧存档自动作废
+const BOARD_VERSION = 5; // v3.2：新增 await_move/头像/互动字段与卡池，旧存档自动作废
 
 /* 灰度开关（默认全开；出问题把对应项设 0 即可回退某项能力） */
 const F = {
@@ -85,7 +86,7 @@ const LAYOUT = [
   { t: 'property', g: 'orange', p: 200 },
   { t: 'park' },                                   // 角
   { t: 'property', g: 'red',    p: 220 },
-  { t: 'minigame', k: ['bond', 'coop'] },
+  { t: 'minigame', k: ['bond', 'coop', 'story'] },
   { t: 'property', g: 'red',    p: 220 },
   { t: 'property', g: 'red',    p: 240 },
   { t: 'station', p: 200 },
@@ -198,6 +199,8 @@ const CARD_POOLS = {
     { text: '发红包给 TA -120（默契 +1）', e: { type: 'transfer', v: 120, heart: 1 } },
     { text: '入手一辆小车，下 2 次多走 2 格', e: { type: 'buycar', v: 2 } },
     { text: '人生小考：请做出一个选择', e: { type: 'life' } },
+    { text: '💞 一个要两个人一起做的决定…', e: { type: 'story' } },
+    { text: '🛤️ 前方岔路，自己挑方向', e: { type: 'fork' } },
   ],
   destiny: [
     { text: '投资获利，+180', e: { type: 'money', v: 180 } },
@@ -222,6 +225,8 @@ const CARD_POOLS = {
     { text: '搭上顺风车，下 3 次多走 2 格', e: { type: 'buycar', v: 3 } },
     { text: '命运的岔路口，做个选择吧', e: { type: 'life' } },
     { text: '误入传送漩涡，瞬移到对面！', e: { type: 'teleport' } },
+    { text: '💞 一起做个温柔的决定吧', e: { type: 'story' } },
+    { text: '🛤️ 命运的岔路口，选一条', e: { type: 'fork' } },
   ],
 };
 /* v3.1 模拟人生：人生驿站 / 命运卡触发的双选情境 */
@@ -250,6 +255,12 @@ const LIFE_EVENTS = [
   { q: '🏡 房东问要不要续租一起住', o: [
       { label: '签下我们的小家 -300', e: { money: -300, heart: 2 } },
       { label: '再攒攒，存 150', e: { deposit: 150 } } ] },
+  { q: '🎡 游乐园双人套票在打折', o: [
+      { label: '买！一起疯一天 -200（默契 +2）', e: { money: -200, heart: 2 } },
+      { label: '省下来 +120 存着', e: { deposit: 120 } } ] },
+  { q: '🍲 TA 加班到很晚，你想？', o: [
+      { label: '带夜宵去接 -80（默契 +2）', e: { money: -80, heart: 2 } },
+      { label: '发消息等 TA（默契 +1）', e: { heart: 1 } } ] },
 ];
 const QUIZ_POOL = [
   { q: '蜜蜂采集什么来酿蜜？', o: ['花蜜', '树叶', '雨水', '泥土'], a: 0 },
@@ -300,6 +311,30 @@ const COOP_POOL = [
 ];
 const WHEEL_PRIZES = [-100, -50, 60, 100, 150, 200, 0, 120];
 
+/* v3.2 头像系统：内置头像 id（boy/girl 为原 PNG，其余为程序化 SVG）+
+ * 自定义上传（自定义图走独立 avatarImage 事件，不进 state，避免同步膨胀）。 */
+const AVATAR_IDS = ['boy', 'girl', 'cat', 'bunny', 'bear', 'fox', 'panda', 'penguin', 'frog', 'unicorn'];
+/* v3.2 共同决策情境：复用 duo await_mini 框架，两人各选，一致/不同有不同结果 */
+const STORY_POOL = [
+  { q: '🏡 如果能一起有个小家，先布置哪里？', o: ['温馨卧室', '阳光阳台', '开放式厨房', '堆满书的客厅'] },
+  { q: '🌍 下次一起旅行，最想去哪儿？', o: ['海边躺平', '山里看星', '城市暴走', '窝在民宿'] },
+  { q: '🍳 今晚一起下厨，做什么？', o: ['番茄鸡蛋面', '火锅涮起来', '照着教程烤蛋糕', '点外卖吧哈哈'] },
+  { q: '🐱 如果一起养只小宠物，选谁？', o: ['黏人的猫', '热情的狗', '安静的兔子', '先云吸为敬'] },
+  { q: '🎬 周末窝一起看什么片？', o: ['治愈动画', '悬疑烧脑', '老喜剧', '纪录片'] },
+  { q: '💌 纪念日想要哪种惊喜？', o: ['手写长信', '一顿亲手做的饭', '突然出现', '一起去看海'] },
+  { q: '🌙 睡不着的时候，最想一起干嘛？', o: ['聊到天亮', '半夜压马路', '各刷手机但挨着', '一起听歌'] },
+  { q: '🍰 最后一块蛋糕，怎么办？', o: ['让给 TA', '一人一半', '石头剪刀布', '再买一块'] },
+];
+/* v3.2 岔路情境：复用 await_choice 框架，选择落到不同步数（不递归 resolveTile） */
+const FORK_EVENTS = [
+  { q: '🛤️ 前面出现岔路口，往哪边走？', o: [
+      { label: '🌸 花园小径（+3 步）', jump: 3 }, { label: '🌊 海边大道（+6 步）', jump: 6 } ] },
+  { q: '🚶 两条小路，凭直觉选一条～', o: [
+      { label: '🎡 热闹集市（+2 步）', jump: 2 }, { label: '🌲 安静林荫（+5 步）', jump: 5 } ] },
+  { q: '🚌 今天想慢慢逛还是快快跑？', o: [
+      { label: '🐢 边走边看（+1 步）', jump: 1 }, { label: '🚀 一路小跑（+7 步）', jump: 7 } ] },
+];
+
 const RPS_PRIZE = 60, QUIZ_REWARD = 80, QUIZ_PENALTY = 40;
 const BOND_REWARD = 100, COOP_REWARD = 80, DARE_REWARD = 70;
 
@@ -319,7 +354,7 @@ const genToken = () => Math.random().toString(36).slice(2, 12) + Date.now().toSt
 
 function makePlayer(id, name, color, token) {
   return { id, name: name || '玩家', color, token, connected: true,
-    pos: 0, money: 0, props: {}, mortgaged: {}, items: { freeRent: 0 }, avatar: null,
+    pos: 0, money: 0, props: {}, mortgaged: {}, items: { freeRent: 0 }, avatar: null, avatarData: null,
     inJail: false, jailTurns: 0, bankrupt: false, laps: 0,
     savings: 0, loan: 0, cars: 0, carBoost: 0 };   // v3.1 模拟人生
 }
@@ -335,6 +370,7 @@ function buildGame(room) {
     current: 0, maxRounds, rounds: 0,
     targetLaps: m.targetLaps, coopTarget: m.coopTarget, heartTarget: m.heartTarget,
     heart: 0, phase: 'await_roll', dice: [0, 0], doublesCount: 0,
+    diceId: 0, pending: null,
     mini: null, auction: null, lastEvent: null, eventFx: null, buyTile: null, buyPrice: 0,
     log: [], winner: null, coop: null, moveSteps: [], passedGo: false,
     moveId: 0, fxId: 0,
@@ -342,7 +378,8 @@ function buildGame(room) {
   room.players.forEach((p, i) => {
     p.pos = GO_INDEX; p.money = theme.startMoney; p.props = {}; p.mortgaged = {};
     p.items = { freeRent: 0 }; p.inJail = false; p.jailTurns = 0;
-    p.bankrupt = false; p.laps = 0; p.avatar = i === 0 ? 'boy' : 'girl';
+    p.bankrupt = false; p.laps = 0;
+    if (!p.avatar || !AVATAR_IDS.includes(p.avatar)) p.avatar = i === 0 ? 'boy' : 'girl'; // v3.2 保留玩家自选头像
     p.savings = 0; p.loan = 0; p.cars = 0; p.carBoost = 0;
   });
   pushLog(room, `游戏开始！${theme.name} · ${m.name} · ${pace.name}节奏（${m.desc}）`);
@@ -361,7 +398,7 @@ function boardState(room) {
     theme: room.theme, themeName: THEMES[room.theme].name,
     tiles: THEMES[room.theme].tiles, groups: GROUPS, layout: LAYOUT.map((_, i) => tileRC(i)),
     salary: THEMES[room.theme].salary, startMoney: THEMES[room.theme].startMoney,
-    scale: THEMES[room.theme].scale,
+    scale: THEMES[room.theme].scale, avatars: AVATAR_IDS,
   };
 }
 
@@ -396,6 +433,7 @@ function publicState(room, forId) {
       coopTarget: g.coopTarget, heartTarget: g.heartTarget,
       tileDyn: td, moveSteps: g.moveSteps, passedGo: g.passedGo,
       moveId: g.moveId || 0, fxId: g.fxId || 0, mover: g.mover || 0,
+      diceId: g.diceId || 0, pendingSteps: g.pending ? g.pending.steps : 0,
       buyTile: g.buyTile, buyPrice: g.buyPrice, choice: g.choice || null,
       mini: g.mini ? miniView(room, forId) : null,
       auction: g.auction ? { ...g.auction } : null,
@@ -419,6 +457,10 @@ function broadcast(room, { full = false } = {}) {
 }
 function sendBoard(room) {
   room.players.forEach((p) => { if (p.id) io.to(p.id).emit('board', boardState(room)); });
+  // v3.2：重连/请求同步/开局时补发自定义头像数据（不进 state，独立事件）
+  room.players.forEach((p, idx) => {
+    if (p.avatar === 'custom' && p.avatarData) io.to(room.code).emit('avatarImage', { idx, data: p.avatarData });
+  });
 }
 function step(room) { checkEnd(room); broadcast(room); }
 
@@ -512,13 +554,18 @@ function goToPos(room, player, target, collectSalary) {
   return g.passedGo;
 }
 
+/* v3.2 掷骰分两步：
+ * ① rollDice   只掷骰、算点数/监狱/小车加成，phase→await_move，不移动棋子；
+ * ② confirmMove 玩家点「前进」后才生成移动序列并结算落地。
+ * 双方都有时间看清点数，节奏由玩家掌控，动画掩盖 RTT 的同时不抢操作。 */
 function rollDice(room, player) {
-  const g = room.game, N = THEMES[room.theme].tiles.length;
+  const g = room.game;
   const d1 = 1 + Math.floor(Math.random() * 6);
   const d2 = 1 + Math.floor(Math.random() * 6);
   let bonus = 0;
   if (g.pace === 'fast' && Math.random() < 0.35) bonus = 1 + Math.floor(Math.random() * 3); // 快骰
   g.dice = [d1, d2]; g.diceBonus = bonus;
+  g.diceId = (g.diceId || 0) + 1;                 // 前端据此触发 3D 骰子动画（去重）
   const isDouble = d1 === d2;
 
   if (player.inJail) {
@@ -547,7 +594,18 @@ function rollDice(room, player) {
     pushLog(room, `🚗 ${player.name} 开车兜风，本次多走 2 格（剩余 ${player.carBoost} 次）。`);
   }
   const steps = d1 + d2 + bonus + carAdd;
-  const from = player.pos;
+  g.pending = { steps, isDouble, from: player.pos, moverIdx: room.players.indexOf(player) };
+  g.moveSteps = [];                                // 掷骰阶段不移动，避免前端误播旧序列
+  g.phase = 'await_move';
+  pushLog(room, `🎲 ${player.name} 掷出 ${d1}+${d2}${bonus ? '+' + bonus + '(快骰)' : ''}${carAdd ? '+2(小车)' : ''}=${steps} 点，点「前进」出发～`);
+  setFx(room, 'dice', `🎲 ${steps} 点！点「前进」出发`);
+}
+
+function confirmMove(room, player) {
+  const g = room.game, N = THEMES[room.theme].tiles.length;
+  const pend = g.pending;
+  if (!pend) { g.phase = 'await_roll'; return; }
+  const { steps, isDouble, from } = pend;
   const seq = [];
   for (let k = 1; k <= steps; k++) seq.push((from + k) % N);
   player.pos = seq[seq.length - 1];
@@ -556,12 +614,12 @@ function rollDice(room, player) {
   if (g.passedGo) {
     player.laps++; player.money += g.salary;
     pushLog(room, `${player.name} 绕完第 ${player.laps} 圈，经过起点 +${g.salary}。`);
-    if (F.extraRules && (player.savings || 0) > 0) {          // 存款 +8% 利息
+    if (F.extraRules && (player.savings || 0) > 0) {
       const interest = Math.max(1, Math.round(player.savings * 0.08));
       player.savings += interest;
       pushLog(room, `🏦 ${player.name} 存款生息 +${interest}（共存 ${player.savings}）。`);
     }
-    if (F.extraRules && (player.loan || 0) > 0) {             // 每圈自动还 100
+    if (F.extraRules && (player.loan || 0) > 0) {
       const pay = Math.min(player.loan, 100);
       player.loan -= pay; player.money -= pay;
       pushLog(room, `💳 ${player.name} 自动还贷 -${pay}（剩余 ${player.loan}）。`);
@@ -569,25 +627,28 @@ function rollDice(room, player) {
     }
   }
   const tile = THEMES[room.theme].tiles[player.pos];
-  pushLog(room, `${player.name} 掷出 ${d1}+${d2}${bonus ? '+' + bonus + '(快骰)' : ''}${carAdd ? '+2(小车)' : ''}=${steps}，到【${tile.name}】。`);
-  // 情侣彩蛋：两人落在同一格 → 默契 +1（心跳模式主要来源）
+  pushLog(room, `${player.name} 前进 ${steps} 步，到【${tile.name}】。`);
   const other0 = room.players.find((x) => x !== player);
   if (other0 && !other0.bankrupt && other0.pos === player.pos && player.pos !== GO_INDEX) {
     g.heart++;
     pushLog(room, `💗 ${player.name} 和 ${other0.name} 在【${tile.name}】相遇，默契值 +1！`);
     setFx(room, 'heart', '心有灵犀，相遇啦 💗');
   }
+  g.pending = null;
+  // v3.2 修复：结算前先把 phase 归位为 await_roll，让 resolveTile 只在有
+  // 待决事件（买地/人生选择/小游戏/拍卖）时覆盖它。否则末尾的
+  // if(phase==='await_roll') 恒不成立，落到普通格会永久卡在 await_move。
+  g.phase = 'await_roll';
   resolveTile(room, player);
 
-  if (g.phase === 'await_roll') {
+  // sendJail 内部已 advanceTurn 切换过回合，这里不再二次推进，避免跳过对方
+  if (g.phase === 'await_roll' && !player.inJail) {
     if (isDouble) {
       g.doublesCount++;
-      if (g.doublesCount >= 3) {
-        sendJail(room, player, '连续 3 次双数');
-      } else {
+      if (g.doublesCount >= 3) sendJail(room, player, '连续 3 次双数');
+      else {
         pushLog(room, `${player.name} 掷出双数，再来一次！`);
         setFx(room, 'double', '双数！再来一次 🎲');
-        return; // 同一玩家继续
       }
     } else advanceTurn(room, false);
   }
@@ -691,7 +752,9 @@ function applyCard(room, player, card) {
       for (let k = 1; k <= N; k++) { const x = (player.pos + k) % N; if (tiles[x].type === e.type2) { j = x; break; } }
       goToPos(room, player, j, true); resolveTile(room, player); break;
     }
-    case 'mini': startMini(room, player, player.pos, rand(['rps', 'quiz', 'wheel', 'bond', 'coop', 'dare'])); break;
+    case 'mini': startMini(room, player, player.pos, rand(['rps', 'quiz', 'wheel', 'bond', 'coop', 'dare', 'story'])); break;
+    case 'story': startMini(room, player, player.pos, 'story'); break;
+    case 'fork': if (F.extraRules) startChoice(room, player, 'fork'); break;
     case 'deposit': {
       const v = Math.min(e.v, Math.max(0, player.money));
       player.money -= v; player.savings = (player.savings || 0) + v;
@@ -739,6 +802,12 @@ function startChoice(room, player, kind) {
       { label: '💳 借 300 周转', value: 'loan300' },
       { label: '➡️ 什么也不做', value: 'skip' },
     ];
+  } else if (kind === 'fork') {
+    const ev = rand(FORK_EVENTS);
+    title = '🛤️ 岔路口'; lifeQ = ev.q;
+    desc = '路线由你挑，走快走慢都是风景';
+    options = ev.o.map((o, i) => ({ label: o.label, value: String(i) }));
+    g._forkEv = ev;
   } else {
     const ev = rand(LIFE_EVENTS);
     title = '🎭 人生驿站'; lifeQ = ev.q;
@@ -771,6 +840,16 @@ function resolveChoice(room, value) {
     } else if (value === 'loan300') {
       player.money += 300; player.loan = (player.loan || 0) + 300; label = '借款 300';
     } else label = value === 'skip' ? '什么也没做' : '超时跳过';
+  } else if (c.kind === 'fork') {
+    const ev = g._forkEv, pick = ev && ev.o[Number(value)];
+    if (pick) {
+      label = pick.label;
+      const N = THEMES[room.theme].tiles.length;
+      const dest = (player.pos + pick.jump) % N;
+      goToPos(room, player, dest, false);   // 生成新 moveSteps，前端播额外移动；不递归结算
+      pushLog(room, `🛤️ ${player.name} 选了「${label}」，到【${THEMES[room.theme].tiles[dest].name}】。`);
+      setFx(room, 'fork', `${label} · 前进 ${pick.jump} 步`);
+    }
   } else {
     const ev = g._lifeEv, pick = ev && ev.o[Number(value)];
     if (pick) { Object.assign(e, pick.e); label = pick.label; }
@@ -778,7 +857,7 @@ function resolveChoice(room, value) {
   applyLifeEffect(room, player, e);
   pushLog(room, `${player.name} 选择「${label}」。`);
   setFx(room, 'life', `${player.name}：${label}`);
-  g.choice = null; g._lifeEv = null;
+  g.choice = null; g._lifeEv = null; g._forkEv = null;
   advanceTurn(room, false);
   step(room);
 }
@@ -903,6 +982,11 @@ function startMini(room, player, tileIdx, kind) {
     answerer = player.id; answererName = player.name;
     g.mini = { kind, mode, tile: tileIdx, q, options, answerer, answererName, actorIdx,
       correct: order.findIndex((o) => o.i === item.a), picks: {}, resolved: false, result: null };
+  } else if (kind === 'story') {
+    const item = rand(STORY_POOL);
+    g.mini = { kind, mode: 'duo', tile: tileIdx, q: item.q, options: item.o,
+      answerer: null, answererName: '', actorIdx,
+      picks: {}, resolved: false, result: null, duo: 'story' };
   } else if (kind === 'bond' || kind === 'coop' || kind === 'dare') {
     const item = kind === 'bond' ? rand(BOND_POOL) : kind === 'coop' ? rand(COOP_POOL) : null;
     q = kind === 'dare' ? rand(DARE_POOL) : item.q;
@@ -924,7 +1008,7 @@ function startMini(room, player, tileIdx, kind) {
   room._miniTimer = setTimeout(() => { if (room.game && room.game.mini && !room.game.mini.resolved) resolveMini(room, true); }, 30000);
 }
 function miniName(k) {
-  return { rps: '石头剪刀布', quiz: '答题挑战', wheel: '幸运转盘', bond: '默契问答', coop: '双人任务', dare: '默契大冒险' }[k] || k;
+  return { rps: '石头剪刀布', quiz: '答题挑战', wheel: '幸运转盘', bond: '默契问答', coop: '双人任务', dare: '默契大冒险', story: '共同决定' }[k] || k;
 }
 function miniPick(room, socketId, value) {
   const g = room.game, m = g.mini;
@@ -969,14 +1053,20 @@ function resolveMini(room, timedOut = false) {
     else { winner = win(a, b) ? p0 : p1; winner.money += RPS_PRIZE; const loser = winner === p0 ? p1 : p0; loser.money -= RPS_PRIZE; checkBankrupt(room, loser);
       text = `${winner.name} 赢！+${RPS_PRIZE}`; fx = 'win'; }
     pushLog(room, `石头剪刀布：${text}`);
-  } else { // bond / coop / dare —— 两人选项一致即成功
+  } else { // bond / coop / dare / story —— 两人选项一致即成功
     const a = m.picks[p0.id], b = m.picks[p1.id];
     const ok = !timedOut && a !== undefined && b !== undefined && a === b;
-    const reward = m.kind === 'bond' ? BOND_REWARD : m.kind === 'coop' ? COOP_REWARD : DARE_REWARD;
+    const isStory = m.kind === 'story';
+    const reward = m.kind === 'bond' ? BOND_REWARD : m.kind === 'coop' ? COOP_REWARD : isStory ? 90 : DARE_REWARD;
     if (ok) {
       p0.money += reward; p1.money += reward;
-      if (m.kind === 'bond' || m.kind === 'coop' || m.kind === 'dare') g.heart += m.kind === 'bond' ? 2 : 1;
-      text = `心有灵犀！两人各 +${reward}，默契值 +${m.kind === 'bond' ? 2 : 1} 💗`; fx = 'heart';
+      g.heart += m.kind === 'bond' ? 2 : isStory ? 2 : 1;
+      text = isStory ? `想到一块去啦！两人各 +${reward}，默契 +2 💗`
+                     : `心有灵犀！两人各 +${reward}，默契值 +${m.kind === 'bond' ? 2 : 1} 💗`;
+      fx = 'heart';
+    } else if (isStory && !timedOut) {
+      p0.money += 30; p1.money += 30; g.heart += 1;
+      text = '虽然选的不一样，但都值得期待～各 +30，默契 +1 💕'; fx = 'heart';
     } else text = timedOut ? '超时啦，下次再默契一次～' : '这次没对上，下次再来 💕';
     pushLog(room, `${miniName(m.kind)}：${text}`);
   }
@@ -1069,7 +1159,7 @@ function persistRoom(room) {
     boardVersion: BOARD_VERSION, code: room.code, gameKind: room.gameKind || 'monopoly', theme: room.theme, mode: room.mode,
     pace: room.pace, ver: room.ver || 0,
     players: room.players.map((p) => ({
-      name: p.name, color: p.color, token: p.token, avatar: p.avatar,
+      name: p.name, color: p.color, token: p.token, avatar: p.avatar, avatarData: p.avatarData || null,
       pos: p.pos, money: p.money, props: p.props, mortgaged: p.mortgaged, items: p.items,
       inJail: p.inJail, jailTurns: p.jailTurns, bankrupt: p.bankrupt, laps: p.laps,
       savings: p.savings || 0, loan: p.loan || 0, cars: p.cars || 0, carBoost: p.carBoost || 0,
@@ -1095,7 +1185,9 @@ function loadSaves() {
         ver: data.ver || 0, players: data.players.map((p) => ({ ...p, id: null, connected: false })),
         game: data.game };
       if (room.game) { room.game.mini = null; room.game.auction = null; room.game.choice = null;
-        room.game._lifeEv = null; room.game.phase = 'await_roll'; }
+        room.game._lifeEv = null; room.game._forkEv = null;
+        // 掷骰完等前进阶段可恢复（pending 已随 game 存档）；其余交互态回 await_roll
+        if (!(room.game.phase === 'await_move' && room.game.pending)) room.game.phase = 'await_roll'; }
       rooms.set(room.code, room);
       room.players.forEach((p) => tokens.set(p.token, { code: room.code, playerId: null }));
       pushLog(room, '（已从存档恢复，等待玩家重连…）');
@@ -1119,14 +1211,14 @@ io.on('connection', (socket) => {
     }
   }
 
-  socket.on('createRoom', ({ name, theme, mode, pace, gameKind }) => {
+  socket.on('createRoom', ({ name, theme, mode, pace, gameKind, avatar }) => {
     const code = genCode();
     const room = { code,
       gameKind: GAME_KINDS[gameKind] && GAME_KINDS[gameKind].ready ? gameKind : 'monopoly',
       theme: THEMES[theme] ? theme : 'city',
       mode: MODES[mode] ? mode : 'classic', pace: PACES[pace] ? pace : 'standard',
       ver: 0, players: [makePlayer(socket.id, name, '#ff5e7e', genToken())], game: null };
-    room.players[0].avatar = 'boy';
+    room.players[0].avatar = AVATAR_IDS.includes(avatar) ? avatar : 'boy';
     rooms.set(code, room);
     tokens.set(room.players[0].token, { code, playerId: socket.id });
     socket.join(code);
@@ -1135,13 +1227,13 @@ io.on('connection', (socket) => {
     broadcast(room);
   });
 
-  socket.on('joinRoom', ({ code, name }) => {
+  socket.on('joinRoom', ({ code, name, avatar }) => {
     const room = rooms.get((code || '').toUpperCase());
     if (!room) return socket.emit('errorMsg', '房间不存在');
     if (room.players.length >= 2) return socket.emit('errorMsg', '房间已满');
     if (room.game) return socket.emit('errorMsg', '游戏已开始，无法加入');
     const p = makePlayer(socket.id, name, '#5b8ff9', genToken());
-    p.avatar = 'girl';
+    p.avatar = AVATAR_IDS.includes(avatar) ? avatar : 'girl';
     room.players.push(p);
     tokens.set(p.token, { code: room.code, playerId: socket.id });
     socket.join(room.code);
@@ -1191,6 +1283,84 @@ io.on('connection', (socket) => {
     g.eventFx = null;
     rollDice(room, player);
     step(room);
+  });
+
+  /* v3.2 前进：掷骰后由当前玩家确认，才生成移动序列并结算 */
+  socket.on('confirmMove', () => {
+    const room = findRoomBySocket(socket.id);
+    if (!room || !room.game) return socket.emit('needResync');
+    const g = room.game;
+    if (g.phase !== 'await_move' || !g.pending) return;
+    const player = room.players[g.pending.moverIdx];
+    if (!player || player.id !== socket.id) return;
+    confirmMove(room, player);
+    step(room);
+  });
+
+  /* v3.2 头像切换：内置 id 或 custom（自定义图单独广播，不进 state） */
+  socket.on('setAvatar', ({ avatar, data }) => {
+    const room = findRoomBySocket(socket.id);
+    if (!room) return socket.emit('needResync');
+    const p = room.players.find((x) => x.id === socket.id);
+    if (!p) return;
+    const idx = room.players.indexOf(p);
+    let av = AVATAR_IDS.includes(avatar) ? avatar : (avatar === 'custom' ? 'custom' : p.avatar);
+    if (av === 'custom' && typeof data === 'string' && data.startsWith('data:image/') && data.length < 160000) {
+      p.avatarData = data;
+      io.to(room.code).emit('avatarImage', { idx, data });
+    } else if (av !== 'custom') {
+      p.avatarData = null;
+      io.to(room.code).emit('avatarImage', { idx, data: null });
+    }
+    p.avatar = av;
+    broadcast(room);
+  });
+
+  /* v3.2 双人实时互动：旁路事件，不改变回合状态机，对方屏幕即时飘动画。
+   * heart 涨默契、money 真实转账；其余为情感互动表现。带冷却防刷屏。 */
+  socket.on('interact', ({ kind, amount }) => {
+    const room = findRoomBySocket(socket.id);
+    if (!room) return;
+    const p = room.players.find((x) => x.id === socket.id);
+    if (!p) return;
+    const idx = room.players.indexOf(p);
+    const other = room.players.find((x) => x !== p);
+    const now = Date.now();
+    room._interactAt = room._interactAt || {};
+    const last = room._interactAt[idx] || 0;
+    const EMOJI = { heart: '💗', poke: '👉', gift: '🎁', money: '💰', rps: '✊' };
+    let text = '', needStep = false, fxHeart = false;
+    if (kind === 'money') {
+      if (now - last < 3000) return;
+      const v = Math.max(10, Math.min(500, Math.round(Number(amount) || 50)));
+      if (p.money < v) return socket.emit('errorMsg', '余额不够送啦～');
+      p.money -= v; if (other) other.money += v;
+      checkBankrupt(room, p); needStep = true;
+      text = `${p.name} 给 ${other ? other.name : 'TA'} 送了 ${v} 零花钱 💰`;
+      pushLog(room, text);
+    } else if (kind === 'heart') {
+      if (now - last < 6000) return;
+      if (room.game && room.game.phase !== 'ended') { room.game.heart++; needStep = true; fxHeart = true; }
+      text = `${p.name} 发来一颗爱心，默契 +1 💗`;
+      pushLog(room, text);
+    } else if (kind === 'rps') {
+      if (now - last < 3000) return;
+      const r = ['对方赢啦，撒个娇吧～', '平局！再来一局？', '你赢啦，讨个小奖励 ✨'][Math.floor(Math.random() * 3)];
+      text = `${p.name} 发起石头剪刀布：${r}`;
+      pushLog(room, text);
+    } else if (kind === 'gift') {
+      if (now - last < 4000) return;
+      text = `${p.name} 送出一个小礼物 🎁「给你的小惊喜」`;
+      pushLog(room, text);
+    } else {
+      if (now - last < 2500) return;
+      text = `${p.name} 戳了戳你 👉 在吗在吗～`;
+      pushLog(room, text);
+    }
+    room._interactAt[idx] = now;
+    io.to(room.code).emit('interactFx', { from: p.name, fromIdx: idx, kind, emoji: EMOJI[kind] || '💕', text });
+    if (fxHeart) setFx(room, 'heart', text);
+    if (needStep) step(room); else broadcast(room);
   });
 
   socket.on('buyDecision', ({ buy }) => {
@@ -1312,8 +1482,14 @@ io.on('connection', (socket) => {
         skipPendingMini(room);
         if (room.game && room.game.phase === 'await_choice' && room.game.choice) {
           clearTimeout(room._choiceTimer);
-          room.game.choice = null; room.game._lifeEv = null;
+          room.game.choice = null; room.game._lifeEv = null; room.game._forkEv = null;
           pushLog(room, '对方掉线，人生选择跳过，继续游戏。');
+          advanceTurn(room, false);
+        }
+        if (room.game && room.game.phase === 'await_move' && room.game.pending &&
+            room.game.pending.moverIdx === room.players.indexOf(p)) {
+          room.game.pending = null; room.game.phase = 'await_roll';
+          pushLog(room, '对方掉线，本回合跳过前进。');
           advanceTurn(room, false);
         }
         broadcast(room);
@@ -1344,4 +1520,4 @@ server.on('error', (e) => {
   if (e.code === 'EADDRINUSE') console.error(`⚠️ 端口 ${PORT} 已被占用（可能已有实例在运行），本实例退出。`);
   else console.error('服务器错误:', e);
 });
-server.listen(PORT, () => console.log(`💕 双人游戏合集 v3.1 已启动: http://localhost:${PORT}`));
+server.listen(PORT, () => console.log(`💕 双人游戏合集 v3.2 已启动: http://localhost:${PORT}`));

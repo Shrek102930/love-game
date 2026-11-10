@@ -4,9 +4,9 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 <title>💕 双人游戏合集 · 情侣大富翁</title>
-<meta name="app-version" content="v3.1" />
+<meta name="app-version" content="v3.2" />
 <meta name="theme-color" content="#ff8faa" />
-<link rel="stylesheet" href="/style.css?v=5" />
+<link rel="stylesheet" href="/style.css?v=6" />
 </head>
 <body>
 
@@ -50,6 +50,13 @@
 
     <label>你的昵称</label>
     <input id="nameInput" maxlength="8" placeholder="例如：小帅 / 小美" />
+
+    <label>挑个头像（点开可以换，也能上传自己的照片）</label>
+    <button id="avatarPickBtn" class="avatar-pick" type="button">
+      <img id="avatarPickImg" src="/assets/avatar-boy.png" alt="" />
+      <span class="ap-txt"><b id="avatarPickName">男生</b><small>点击更换形象 · 支持自定义上传</small></span>
+      <span class="ap-arrow">›</span>
+    </button>
 
     <label>选个主题</label>
     <div class="themes" id="themeBtns">
@@ -168,6 +175,18 @@
     <!-- 事件条 -->
     <div class="event" id="eventBar"></div>
 
+    <!-- v3.2 双人实时互动条：旁路动作，任何时刻都能点，对方屏幕即时飘动画 -->
+    <div class="interact-bar" id="interactBar">
+      <div class="ib-head">💕 互动一下 <span>随时给 TA 一点小动静</span></div>
+      <div class="ib-btns" id="interactBtns">
+        <button data-k="heart" type="button"><i>💗</i><span>比心</span></button>
+        <button data-k="poke" type="button"><i>👉</i><span>戳戳</span></button>
+        <button data-k="gift" type="button"><i>🎁</i><span>送礼</span></button>
+        <button data-k="money" type="button"><i>💰</i><span>送钱</span></button>
+        <button data-k="rps" type="button"><i>✊</i><span>猜拳</span></button>
+      </div>
+    </div>
+
     <!-- 操作区 -->
     <div class="controls" id="controls"></div>
 
@@ -210,6 +229,7 @@
     <h1 style="margin:8px 0 2px">游戏设置</h1>
     <p class="m-sub" id="setRoomInfo">房间 ------</p>
     <div class="set-list">
+      <button id="setAvatar" class="set-row">🖼️ 更换头像 <span>随时换形象</span></button>
       <button id="setSound" class="set-row">🔊 音效 <span id="setSoundVal">开</span></button>
       <button id="setRestart" class="set-row warn">🔄 重开本局 <span>双方回到等待页</span></button>
       <button id="setExit" class="set-row danger">🏠 退出房间 <span>回主菜单</span></button>
@@ -249,6 +269,42 @@
   </div>
 </div>
 
+<!-- ============ v3.2 头像选择弹窗 ============ -->
+<div id="avatarModal" class="modal hidden">
+  <div class="modal-card avatar-modal-card">
+    <div class="mini-tag">🖼️ 挑个形象</div>
+    <h1 style="margin:10px 0 2px">选个头像吧</h1>
+    <p class="m-sub">对方会实时看到你换的形象～</p>
+    <div class="avatar-grid" id="avatarGrid"></div>
+    <label class="avatar-upload">
+      <span>📷 上传自己的照片 / 图片</span>
+      <input type="file" id="avatarFile" accept="image/*" />
+    </label>
+    <p class="m-sub" style="margin-top:6px">图片只在本局房间内同步，会自动压缩到小尺寸</p>
+    <button id="avatarClose" class="ghost big">关闭</button>
+    <footer class="copyright">
+      <span class="cr-line"></span>
+      <span>© 2026 <b>寻找格陵兰</b> · 版权所有</span>
+      <span class="cr-line"></span>
+    </footer>
+  </div>
+</div>
+
+<!-- ============ v3.2 送钱金额选择 ============ -->
+<div id="moneySheet" class="modal hidden">
+  <div class="modal-card money-card">
+    <div class="mini-tag">💰 送点零花钱</div>
+    <h1 style="margin:10px 0 2px">给 TA 发个小红包</h1>
+    <p class="m-sub">从你的余额里转给对方，一起过日子嘛～</p>
+    <div class="money-opts" id="moneyOpts">
+      <button data-v="50">💰 50</button>
+      <button data-v="100">💰 100</button>
+      <button data-v="200">💰 200</button>
+    </div>
+    <button id="moneyCancel" class="ghost big">再想想</button>
+  </div>
+</div>
+
 <!-- ============ 通用遮罩（重连询问等） ============ -->
 <div id="overlay" class="overlay hidden">
   <div class="overlay-card">
@@ -259,7 +315,10 @@
   </div>
 </div>
 
+<!-- v3.2 互动飘动画层 -->
+<div id="interactFxLayer" class="interact-fx-layer"></div>
+
 <script src="/socket.io/socket.io.js"></script>
-<script src="/game.js?v=4"></script>
+<script src="/game.js?v=5"></script>
 </body>
 </html>

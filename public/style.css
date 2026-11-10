@@ -373,3 +373,76 @@ h2{font-size:18px;margin:0 0 8px}
   .card{padding:18px 14px}
 }
 @media (min-width:560px){ .game-wrap{max-width:520px} }
+
+/* ==================== v3.2 头像选择 ==================== */
+.avatar-pick{display:flex;align-items:center;gap:10px;width:100%;background:#fff;
+  border:1.5px solid #f4e6ee;border-radius:14px;padding:8px 12px;text-align:left;
+  box-shadow:0 2px 8px rgba(180,110,150,.06)}
+.avatar-pick:active{transform:scale(.99)}
+.avatar-pick img{width:44px;height:44px;border-radius:50%;object-fit:cover;flex:none;
+  border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.12);background:#ffeef4}
+.avatar-pick .ap-txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.avatar-pick .ap-txt b{font-size:14px;color:#5b5268}
+.avatar-pick .ap-txt small{font-size:10.5px;color:#a89cb0;font-weight:500}
+.avatar-pick .ap-arrow{font-size:24px;color:#d9b6c6;font-weight:400}
+.avatar-modal-card{max-width:360px}
+.avatar-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:12px 0}
+.av-item{background:#faf6fb;border:2px solid transparent;border-radius:12px;padding:6px 2px;
+  display:flex;flex-direction:column;align-items:center;gap:3px}
+.av-item img{width:44px;height:44px;border-radius:50%;object-fit:cover;background:#fff;
+  border:1px solid #f0e4ee}
+.av-item span{font-size:9.5px;color:#8a7186;font-weight:600}
+.av-item.active{border-color:var(--pink);background:#fff4f8}
+.av-item.active span{color:var(--pink-d)}
+.avatar-upload{display:block;text-align:center;background:#fff4f8;border:1.5px dashed #f4b9cf;
+  border-radius:12px;padding:12px;margin:2px 0 4px;font-size:12.5px;font-weight:700;color:#c04a72;
+  cursor:pointer;position:relative;overflow:hidden}
+.avatar-upload input{position:absolute;inset:0;opacity:0;cursor:pointer;padding:0;border:0}
+
+/* ==================== v3.2 双人互动条 ==================== */
+.interact-bar{background:linear-gradient(135deg,#fff0f6,#f3f0ff);border:1.5px solid #f6dce8;
+  border-radius:14px;padding:8px 10px 10px;margin:2px 0 8px}
+.ib-head{font-size:11.5px;font-weight:800;color:#c04a72;margin-bottom:7px}
+.ib-head span{font-size:9.5px;color:#b3a2b0;font-weight:500;margin-left:4px}
+.ib-btns{display:flex;gap:6px;justify-content:space-between}
+.ib-btns button{flex:1;background:#fff;border-radius:11px;padding:6px 2px;display:flex;
+  flex-direction:column;align-items:center;gap:1px;box-shadow:0 2px 6px rgba(160,100,140,.08);
+  border:1px solid #fbe6ef;min-width:0}
+.ib-btns button i{font-style:normal;font-size:19px;line-height:1.2}
+.ib-btns button span{font-size:9.5px;color:#8a7186;font-weight:700;white-space:nowrap}
+.ib-btns button:active{transform:scale(.9)}
+.money-card{max-width:320px}
+.money-opts{display:flex;gap:8px;margin:14px 0}
+.money-opts button{flex:1;background:#fff4e6;color:#b8791f;font-size:14px;
+  border:1.5px solid #ffe0b0;padding:13px 4px}
+.money-opts button:active{transform:scale(.94)}
+
+/* ==================== v3.2 互动飘动画 ==================== */
+.interact-fx-layer{position:fixed;inset:0;pointer-events:none;z-index:88;overflow:hidden}
+.i-fx{position:absolute;top:-40px;animation:iFloat 2.4s ease-in forwards}
+@keyframes iFloat{0%{transform:translateY(0) rotate(0);opacity:0}
+  15%{opacity:1}100%{transform:translateY(105vh) rotate(320deg) scale(1.3);opacity:0}}
+.i-fx-big{position:absolute;top:38%;left:50%;transform:translate(-50%,-50%);
+  background:rgba(255,255,255,.96);border:2px solid #ffc2d6;border-radius:20px;
+  padding:14px 22px;box-shadow:0 10px 34px rgba(220,90,140,.3);text-align:center;
+  display:flex;flex-direction:column;align-items:center;gap:2px;animation:iPop 2.2s ease-out forwards}
+.i-fx-big .ifb-emoji{font-size:40px;animation:beat 1s infinite}
+.i-fx-big b{font-size:14px;color:#c04a72}
+.i-fx-big small{font-size:11px;color:#8a7186}
+@keyframes iPop{0%{transform:translate(-50%,-50%) scale(.6);opacity:0}
+  12%{transform:translate(-50%,-50%) scale(1.06);opacity:1}
+  22%{transform:translate(-50%,-50%) scale(1)}
+  80%{opacity:1}100%{transform:translate(-50%,-70%) scale(.96);opacity:0}}
+
+/* ==================== v3.2 前进按钮（区分掷骰） ==================== */
+.advance-btn{background:linear-gradient(135deg,#7ec8a0,#4ec9a5);
+  box-shadow:0 6px 18px rgba(78,201,165,.4);animation:breatheMint 1.8s infinite}
+@keyframes breatheMint{0%,100%{box-shadow:0 6px 18px rgba(78,201,165,.4)}
+  50%{box-shadow:0 6px 26px rgba(78,201,165,.65)}}
+
+@media (max-width:360px){
+  .avatar-grid{grid-template-columns:repeat(5,1fr);gap:5px}
+  .av-item img{width:38px;height:38px}
+  .ib-btns button i{font-size:17px}
+  .ib-btns button span{font-size:8.5px}
+}
