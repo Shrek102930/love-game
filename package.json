@@ -1,0 +1,13 @@
+{
+  "name": "love-monopoly",
+  "version": "1.0.0",
+  "description": "双人异地联机大富翁小游戏（手机浏览器可玩）",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  }
+}
