@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<title>💕 双人大富翁</title>
+<meta name="app-version" content="v3.0" />
+<meta name="theme-color" content="#ff8faa" />
+<link rel="stylesheet" href="/style.css?v=3" />
+</head>
+<body>
+
+<!-- 顶部连接提示 -->
+<div id="netBar" class="netbar hidden"></div>
+
+<!-- ============ 大厅 ============ -->
+<div id="lobby" class="screen">
+  <div class="lobby-bg"></div>
+  <div class="card lobby-card">
+    <div class="brand">
+      <div class="brand-avatars"><img src="/assets/avatar-boy.png" alt=""><img src="/assets/avatar-girl.png" alt=""></div>
+      <h1>双人大富翁</h1>
+      <p class="sub">和 TA 一起，绕着爱心城市走一圈 💕</p>
+    </div>
+
+    <label>你的昵称</label>
+    <input id="nameInput" maxlength="8" placeholder="例如：小帅 / 小美" />
+
+    <label>选个主题</label>
+    <div class="themes" id="themeBtns">
+      <button class="theme-btn active" data-v="city">🏙️ 城市冒险</button>
+      <button class="theme-btn" data-v="campus">🎒 校园时光</button>
+    </div>
+
+    <label>玩法模式</label>
+    <div class="modes" id="modeBtns">
+      <button class="mode-btn active" data-v="classic">⚔️ 经典对战</button>
+      <button class="mode-btn" data-v="race">🏁 竞速</button>
+      <button class="mode-btn" data-v="coop">🤝 合作</button>
+      <button class="mode-btn" data-v="heart">💗 心跳</button>
+    </div>
+
+    <label>游戏节奏</label>
+    <div class="paces" id="paceBtns">
+      <button class="pace-btn" data-v="relaxed">🐢 悠闲</button>
+      <button class="pace-btn active" data-v="standard">⚖️ 标准</button>
+      <button class="pace-btn" data-v="fast">⚡ 快节奏</button>
+    </div>
+
+    <button id="createBtn" class="primary big">✨ 创建房间</button>
+    <div class="divider">或加入 TA 的房间</div>
+    <div class="join-row">
+      <input id="codeInput" maxlength="6" placeholder="输入 6 位房间号" />
+      <button id="joinBtn">加入</button>
+    </div>
+    <div id="lobbyMsg" class="msg"></div>
+    <p class="hint">两人各打开这个网址，一人创建、一人输房间号即可联机 · 断线自动重连</p>
+  </div>
+</div>
+
+<!-- ============ 等待房间 ============ -->
+<div id="waiting" class="screen hidden">
+  <div class="card wait-card">
+    <h1>🎈 等待 TA 加入</h1>
+    <p class="sub">把房间号发给对方吧</p>
+    <div class="code" id="roomCode">------</div>
+    <button id="copyCode" class="ghost">📋 复制房间号</button>
+    <div class="players-mini" id="waitPlayers"></div>
+    <div class="wait-setup" id="waitSetup">
+      <label>主题 / 模式 / 节奏（房主可改）</label>
+      <div class="themes" id="wThemeBtns">
+        <button class="theme-btn" data-v="city">🏙️ 城市</button>
+        <button class="theme-btn" data-v="campus">🎒 校园</button>
+      </div>
+      <div class="modes" id="wModeBtns">
+        <button class="mode-btn" data-v="classic">⚔️ 经典</button>
+        <button class="mode-btn" data-v="race">🏁 竞速</button>
+        <button class="mode-btn" data-v="coop">🤝 合作</button>
+        <button class="mode-btn" data-v="heart">💗 心跳</button>
+      </div>
+      <div class="paces" id="wPaceBtns">
+        <button class="pace-btn" data-v="relaxed">🐢 悠闲</button>
+        <button class="pace-btn" data-v="standard">⚖️ 标准</button>
+        <button class="pace-btn" data-v="fast">⚡ 快节奏</button>
+      </div>
+    </div>
+    <button id="startBtn" class="primary big hidden">🎮 开始游戏</button>
+    <p class="hint" id="waitHint">等待另一位玩家加入…（1/2）</p>
+    <button id="backBtn" class="link-btn">← 返回大厅 / 换个房间</button>
+  </div>
+</div>
+
+<!-- ============ 游戏主界面 ============ -->
+<div id="game" class="hidden">
+  <div class="game-wrap">
+    <!-- 顶栏 -->
+    <div class="topbar">
+      <div class="room">房间 <b id="gCode">------</b></div>
+      <div class="turn" id="gTurn">准备中</div>
+      <button id="soundBtn" class="icon-btn" title="音效开关">🔊</button>
+    </div>
+
+    <!-- 双方玩家卡 -->
+    <div class="players" id="gPlayers"></div>
+
+    <!-- 进度条 -->
+    <div class="progress" id="gProgress"></div>
+
+    <!-- 环形棋盘 -->
+    <div class="board-frame">
+      <div class="board" id="board">
+        <div class="board-center" id="boardCenter">
+          <div class="center-heart">💗</div>
+          <div class="center-title" id="centerTitle">双人大富翁</div>
+          <div class="center-sub" id="centerSub">一起出发吧</div>
+          <div class="dice-area" id="diceArea">
+            <div class="die" id="die1" data-v="1"></div>
+            <div class="die" id="die2" data-v="1"></div>
+          </div>
+          <div class="center-event" id="centerEvent"></div>
+        </div>
+        <div class="pawn-layer" id="pawnLayer"></div>
+      </div>
+    </div>
+
+    <!-- 事件条 -->
+    <div class="event" id="eventBar"></div>
+
+    <!-- 操作区 -->
+    <div class="controls" id="controls"></div>
+
+    <!-- 我的资产 -->
+    <details class="panel" id="assetsPanel">
+      <summary>🏠 我的地产 <span id="propCount"></span></summary>
+      <div id="propList" class="prop-list"></div>
+    </details>
+
+    <!-- 日志 -->
+    <details class="panel">
+      <summary>📜 游戏日志</summary>
+      <div class="log" id="logList"></div>
+    </details>
+
+    <!-- 聊天 -->
+    <details class="panel">
+      <summary>💬 悄悄话</summary>
+      <div class="chatlog" id="chatList"></div>
+      <div class="chatrow"><input id="chatInput" maxlength="40" placeholder="说点什么…" /><button id="chatSend">发送</button></div>
+    </details>
+  </div>
+</div>
+
+<!-- ============ 弹窗层 ============ -->
+<div id="modal" class="modal hidden">
+  <div class="modal-card" id="modalCard"></div>
+</div>
+
+<!-- ============ 结束屏 ============ -->
+<div id="over" class="modal hidden">
+  <div class="modal-card over-card">
+    <div class="over-emoji" id="overEmoji">🎉</div>
+    <h1 id="winText">游戏结束</h1>
+    <p class="sub" id="overSub"></p>
+    <div class="over-chars"><img src="/assets/char-boy.webp" alt=""><img src="/assets/char-girl.webp" alt=""></div>
+    <button id="againBtn" class="primary big">🔄 再来一局</button>
+    <button id="homeBtn" class="link-btn">返回大厅</button>
+  </div>
+</div>
+
+<!-- ============ 通用遮罩（重连询问等） ============ -->
+<div id="overlay" class="overlay hidden">
+  <div class="overlay-card">
+    <div class="spinner"></div>
+    <h2 id="overlayTitle">正在连接…</h2>
+    <p id="overlayDesc">稍等一下</p>
+    <div id="overlayBtns" class="hidden"></div>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="/game.js?v=3"></script>
+</body>
+</html>
