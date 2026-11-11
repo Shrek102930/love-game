@@ -26,6 +26,9 @@ const SAVE_DIR = path.join(__dirname, 'saves');
 if (!fs.existsSync(SAVE_DIR)) fs.mkdirSync(SAVE_DIR, { recursive: true });
 const BOARD_VERSION = 6; // v3.3：双环52格/岔路/内环玩法，旧存档自动作废
 const GARDEN_VERSION = 1; // v4.0：共享小花园（沙盒·2.5D 等距）存档版本
+const CONNECT4_VERSION = 1; // v4.4：主题四子棋（爱心版 Connect Four）棋盘/存档版本
+const CONNECT4_COLS = 7, CONNECT4_ROWS = 6, CONNECT4_WIN = 4; // 经典 7×6 竖屏棋盘，先连四子胜
+const CONNECT4_COLORS = ['#ff5e7e', '#5b8ff9']; // 💗粉心 / 💙蓝心
 
 /* 灰度开关（默认全开；出问题把对应项设 0 即可回退某项能力） */
 const F = {
@@ -214,6 +217,7 @@ const GO_INDEX = 0;
 const GAME_KINDS = {
   monopoly: { name: '情侣大富翁', icon: '🎲', tag: '52 格双环 · 岔路抄近道', ready: true },
   garden:   { name: '共享小花园', icon: '🌷', tag: '2.5D 等距 · 一起养', ready: true },
+  connect4: { name: '主题四子棋', icon: '💗', tag: '爱心连线 · 抢先四连', ready: true },
 };
 const MODES = {
   classic: { name: '经典对战', maxRounds: 30, targetLaps: 0, coopTarget: 0, heartTarget: 0,
@@ -474,6 +478,7 @@ function pushLog(room, msg) {
 /* 静态棋盘定义：只在连接/开局/重连时单独下发一次 */
 function boardState(room) {
   if (room.gameKind === 'garden') return gardenBoard(room);   // v4.0 共享小花园
+  if (room.gameKind === 'connect4') return connect4Board(room); // v4.4 主题四子棋
   return {
     boardVersion: BOARD_VERSION, gameKind: room.gameKind || 'monopoly',
     theme: room.theme, themeName: THEMES[room.theme].name,
@@ -488,6 +493,7 @@ function boardState(room) {
 /* 瘦身状态：tiles 只发动态摘要 [ownerIdx|null, level, mortgaged] */
 function publicState(room, forId) {
   if (room.gameKind === 'garden') return gardenPublicState(room, forId);  // v4.0 共享小花园
+  if (room.gameKind === 'connect4') return connect4PublicState(room, forId); // v4.4 主题四子棋
   const g = room.game;
   const tiles = THEMES[room.theme].tiles;
   const td = tiles.map((_, i) => {
@@ -533,6 +539,57 @@ function miniView(room, forId) {
     answererName: m.answererName, isAnswerer: m.answerer === forId,
     mine: m.picks[forId] ?? null, picked: Object.keys(m.picks).length,
     need: m.mode === 'solo' ? 1 : 2, resolved: m.resolved, result: m.resolved ? m.result : null };
+}
+
+/* =========================================================
+ *  v4.4 主题四子棋（爱心版 Connect Four）辅助函数（顶层作用域）
+ *  供 boardState / publicState（顶层）与连接处理器中的 connect4Action 共用。
+ *  棋盘 board[r][c]：r=行(0 顶部)、c=列，值为 0(粉心)/1(蓝心)/null。
+ * ======================================================= */
+function makeConnect4() {
+  const board = [];
+  for (let r = 0; r < CONNECT4_ROWS; r++) board.push(new Array(CONNECT4_COLS).fill(null));
+  return { ver: CONNECT4_VERSION, board, turn: 0, winner: null, winCells: [], moves: 0, draw: false, lastDrop: null, startedAt: Date.now(), log: [] };
+}
+function buildConnect4(room) { room.connect4 = makeConnect4(); connect4Log(room, '💗 四子棋开局！你俩轮流选一列，先把 4 颗心连成一线就赢～'); }
+function connect4Log(room, msg) {
+  const c = room.connect4; if (!c) return;
+  c.log = c.log || [];
+  c.log.unshift({ t: Date.now(), msg });
+  if (c.log.length > 20) c.log.pop();
+}
+function connect4Board(room) {
+  return { boardVersion: BOARD_VERSION, connect4Version: CONNECT4_VERSION, gameKind: 'connect4',
+    cols: CONNECT4_COLS, rows: CONNECT4_ROWS, win: CONNECT4_WIN, colors: CONNECT4_COLORS,
+    names: GAME_KINDS.connect4 ? GAME_KINDS.connect4.name : '主题四子棋' };
+}
+function connect4PublicState(room, forId) {
+  const c = room.connect4;
+  return {
+    code: room.code, gameKind: 'connect4', ver: room.ver || 0,
+    boardVersion: BOARD_VERSION, connect4Version: CONNECT4_VERSION,
+    started: !!c, cols: CONNECT4_COLS, rows: CONNECT4_ROWS, win: CONNECT4_WIN, colors: CONNECT4_COLORS,
+    board: c ? c.board : null, turn: c ? c.turn : 0,
+    winner: c ? c.winner : null, winCells: c ? c.winCells : [],
+    moves: c ? c.moves : 0, draw: c ? c.draw : false, lastDrop: c ? c.lastDrop : null,
+    log: c ? (c.log || []).slice(0, 10) : [],
+    players: room.players.map((p) => ({ name: p.name, avatar: p.avatar, connected: p.connected, isYou: p.id === forId,
+      ...(p.id === forId ? { token: p.token } : {}) })),
+  };
+}
+function connect4CheckWin(board, r0, c0, who) {
+  const dirs = [[0, 1], [1, 0], [1, 1], [1, -1]];
+  for (const [dr, dc] of dirs) {
+    let cells = [[r0, c0]];
+    for (const s of [1, -1]) {
+      let r = r0 + dr * s, c = c0 + dc * s;
+      while (r >= 0 && r < CONNECT4_ROWS && c >= 0 && c < CONNECT4_COLS && board[r][c] === who) {
+        cells.push([r, c]); r += dr; c += dc;
+      }
+    }
+    if (cells.length >= CONNECT4_WIN) return cells;
+  }
+  return null;
 }
 
 function broadcast(room, { full = false } = {}) {
@@ -1360,6 +1417,7 @@ function schedulePersist(room) {
   persistTimers.set(room.code, t);
 }
 function persistRoom(room) {
+  if (room.gameKind === 'connect4') return; // v4.4：四子棋短时对局，不持久化（避免 loadSaves 误当大富翁恢复）
   const data = {
     boardVersion: BOARD_VERSION, gardenVersion: GARDEN_VERSION, code: room.code, gameKind: room.gameKind || 'monopoly', theme: room.theme, mode: room.mode,
     pace: room.pace, ver: room.ver || 0,
@@ -1496,7 +1554,7 @@ io.on('connection', (socket) => {
     const room = rooms.get((code || '').toUpperCase());
     if (!room) return socket.emit('errorMsg', '房间不存在');
     if (room.players.length >= 2) return socket.emit('errorMsg', '房间已满');
-    if (room.game) return socket.emit('errorMsg', '游戏已开始，无法加入');
+    if (room.game || room.connect4) return socket.emit('errorMsg', '游戏已开始，无法加入');
     const p = makePlayer(socket.id, name, '#5b8ff9', genToken());
     p.avatar = AVATAR_IDS.includes(avatar) ? avatar : 'girl';
     room.players.push(p);
@@ -1534,6 +1592,10 @@ io.on('connection', (socket) => {
       if (room.garden) return;
       buildGarden(room); sendBoard(room); broadcast(room); return;
     }
+    if (room.gameKind === 'connect4') {      // v4.4：四子棋不用 mode/pace/theme，直接建棋盘
+      if (room.connect4) return;
+      buildConnect4(room); sendBoard(room); broadcast(room); return;
+    }
     if (mode && MODES[mode]) room.mode = mode;
     if (pace && PACES[pace]) room.pace = pace;
     if (theme && THEMES[theme]) room.theme = theme;
@@ -1544,7 +1606,7 @@ io.on('connection', (socket) => {
 
   socket.on('rollDice', () => {
     const room = findRoomBySocket(socket.id);
-    if (!room) return; if (room.gameKind === 'garden') return; if (!room.game) return socket.emit('needResync');
+    if (!room) return; if (room.gameKind !== 'monopoly') return;
     const g = room.game;
     if (g.phase !== 'await_roll') return;
     const player = room.players[g.current];
@@ -1557,7 +1619,7 @@ io.on('connection', (socket) => {
   /* v3.2 前进：掷骰后由当前玩家确认，才生成移动序列并结算 */
   socket.on('confirmMove', (payload) => {
     const room = findRoomBySocket(socket.id);
-    if (!room) return; if (room.gameKind === 'garden') return; if (!room.game) return socket.emit('needResync');
+    if (!room) return; if (room.gameKind !== 'monopoly') return;
     const g = room.game;
     if (g.phase !== 'await_move' || !g.pending) return;
     const player = room.players[g.pending.moverIdx];
@@ -1638,7 +1700,7 @@ io.on('connection', (socket) => {
 
   socket.on('buyDecision', ({ buy }) => {
     const room = findRoomBySocket(socket.id);
-    if (!room) return; if (room.gameKind === 'garden') return; if (!room.game) return socket.emit('needResync');
+    if (!room) return; if (room.gameKind !== 'monopoly') return;
     const g = room.game;
     if (g.phase !== 'await_buy') return;
     if (room.players[g.current].id !== socket.id) return;
@@ -1655,7 +1717,7 @@ io.on('connection', (socket) => {
 
   socket.on('buildHouse', ({ tileIndex }) => {
     const room = findRoomBySocket(socket.id);
-    if (!room) return; if (room.gameKind === 'garden') return; if (!room.game) return socket.emit('needResync');
+    if (!room) return; if (room.gameKind !== 'monopoly') return;
     const p = room.players.find((x) => x.id === socket.id);
     const r = F.extraRules ? buildHouse(room, p, tileIndex) : { ok: false, msg: '该玩法未开启' };
     if (r.ok) step(room); else socket.emit('errorMsg', r.msg);
@@ -1663,7 +1725,7 @@ io.on('connection', (socket) => {
 
   socket.on('mortgage', ({ tileIndex, redeem }) => {
     const room = findRoomBySocket(socket.id);
-    if (!room) return; if (room.gameKind === 'garden') return; if (!room.game) return socket.emit('needResync');
+    if (!room) return; if (room.gameKind !== 'monopoly') return;
     const p = room.players.find((x) => x.id === socket.id);
     const r = F.extraRules ? mortgage(room, p, tileIndex, !!redeem) : { ok: false, msg: '该玩法未开启' };
     if (r.ok) step(room); else socket.emit('errorMsg', r.msg);
@@ -1671,13 +1733,13 @@ io.on('connection', (socket) => {
 
   socket.on('miniPick', ({ value }) => {
     const room = findRoomBySocket(socket.id);
-    if (!room) return; if (room.gameKind === 'garden') return; if (!room.game) return socket.emit('needResync');
+    if (!room) return; if (room.gameKind !== 'monopoly') return;
     miniPick(room, socket.id, value);
   });
 
   socket.on('choicePick', ({ value }) => {
     const room = findRoomBySocket(socket.id);
-    if (!room) return; if (room.gameKind === 'garden') return; if (!room.game) return socket.emit('needResync');
+    if (!room) return; if (room.gameKind !== 'monopoly') return;
     const g = room.game;
     if (g.phase !== 'await_choice' || !g.choice) return;
     const p = room.players[g.choice.byIdx];
@@ -1687,7 +1749,7 @@ io.on('connection', (socket) => {
 
   socket.on('jailAction', ({ pay }) => {
     const room = findRoomBySocket(socket.id);
-    if (!room) return; if (room.gameKind === 'garden') return; if (!room.game) return socket.emit('needResync');
+    if (!room) return; if (room.gameKind !== 'monopoly') return;
     const g = room.game;
     if (g.phase !== 'await_roll') return;
     const player = room.players[g.current];
@@ -1710,8 +1772,9 @@ io.on('connection', (socket) => {
 
   socket.on('restart', () => {
     const room = findRoomBySocket(socket.id);
-    if (room && room.gameKind === 'garden') return;  // v4.0：花园用 gardenAction.reset，不在此清存档
     if (!room) return socket.emit('needResync');
+    if (room.gameKind === 'garden') return;            // v4.0：花园用 gardenAction.reset
+    if (room.gameKind === 'connect4') { room.connect4 = null; deleteSave(room.code); broadcast(room); return; }
     room.game = null; deleteSave(room.code); broadcast(room);
   });
 
@@ -1808,6 +1871,45 @@ io.on('connection', (socket) => {
     }
   });
 
+  /* =========================================================
+   *  11b. 主题四子棋（v4.4 · 爱心版 Connect Four）
+   *  7×6 竖屏棋盘，两人各一色（💗粉心 / 💙蓝心），轮流选列落子，
+   *  棋子掉到该列最低空位，先连成 4 子（横/竖/斜）获胜，填满为平局。
+   *  服务器权威：点列 → connect4Action({col}) → 校验轮到谁/列是否满 →
+   *  落子 → 切换 turn → 四连判定 → 广播。断线重连靠 state 完整恢复。
+   * ======================================================= */
+  /* v4.4 四子棋辅助函数（makeConnect4 / buildConnect4 / connect4Log / connect4Board /
+     connect4PublicState / connect4CheckWin）已提升到文件顶层，供 boardState / publicState
+     与下方 connect4Action 事件处理器共用。 */
+  socket.on('connect4Action', ({ col } = {}) => {
+    const room = findRoomBySocket(socket.id);
+    if (!room || room.gameKind !== 'connect4' || !room.connect4) return socket.emit('needResync');
+    const c = room.connect4;
+    if (c.winner !== null || c.draw) return;                 // 已结束
+    const idx = room.players.findIndex((x) => x.id === socket.id);
+    if (idx < 0 || idx !== c.turn) return socket.emit('errorMsg', '还没轮到你哦～');
+    const colN = Number(col);
+    if (!Number.isInteger(colN) || colN < 0 || colN >= CONNECT4_COLS) return;
+    let row = -1;
+    for (let r = CONNECT4_ROWS - 1; r >= 0; r--) { if (c.board[r][colN] === null) { row = r; break; } }
+    if (row < 0) return socket.emit('errorMsg', '这一列已经满啦，换一列吧');
+    const who = idx;                                         // 0 = 粉心，1 = 蓝心
+    c.board[row][colN] = who;
+    c.moves++;
+    c.lastDrop = { row, col: colN, who };
+    const winCells = connect4CheckWin(c.board, row, colN, who);
+    if (winCells) {
+      c.winner = who; c.winCells = winCells;
+      connect4Log(room, `${room.players[who].name} 的四颗心连成一线，赢啦！💞`);
+    } else if (c.moves >= CONNECT4_ROWS * CONNECT4_COLS) {
+      c.draw = true; connect4Log(room, '棋盘满了，平局收场～再来一局？');
+    } else {
+      c.turn = 1 - c.turn;
+      connect4Log(room, `${room.players[who].name} 落下一颗${who === 0 ? '粉心' : '蓝心'}，轮到 ${room.players[c.turn].name}`);
+    }
+    broadcast(room);
+  });
+
   /* v3.1 主动退出：两人房一人离开即解散，明确广播给对方，避免对方卡在原地 */
   socket.on('leaveRoom', () => {
     const room = findRoomBySocket(socket.id);
@@ -1825,7 +1927,14 @@ io.on('connection', (socket) => {
   /* v3.1 重开本局：清掉对局但保留房间与两人，双方一起回等待页重新配置 */
   socket.on('endSession', () => {
     const room = findRoomBySocket(socket.id);
-    if (!room) return; if (room.gameKind === 'garden') return; if (!room.game) return socket.emit('needResync');
+    if (!room) return; if (room.gameKind === 'garden') return;
+    if (room.gameKind === 'connect4') {
+      const p = room.players.find((x) => x.id === socket.id);
+      ['_auctionTimer', '_miniTimer', '_choiceTimer'].forEach((k) => clearTimeout(room[k]));
+      room.connect4 = null; deleteSave(room.code);
+      io.to(room.code).emit('sessionEnded', { by: p ? p.name : '对方' }); broadcast(room); return;
+    }
+    if (!room.game) return socket.emit('needResync');
     const p = room.players.find((x) => x.id === socket.id);
     ['_auctionTimer', '_miniTimer', '_choiceTimer'].forEach((k) => clearTimeout(room[k]));
     room.game = null; deleteSave(room.code);
@@ -1887,4 +1996,4 @@ server.on('error', (e) => {
   if (e.code === 'EADDRINUSE') console.error(`⚠️ 端口 ${PORT} 已被占用（可能已有实例在运行），本实例退出。`);
   else console.error('服务器错误:', e);
 });
-server.listen(PORT, () => console.log(`💕 两个人的游戏屋 v4.3 已启动: http://localhost:${PORT}`));
+server.listen(PORT, () => console.log(`💕 两个人的游戏屋 v4.4 已启动: http://localhost:${PORT}`));

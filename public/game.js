@@ -84,28 +84,30 @@ function beep(type) {
 }
 function toggleSound() {
   soundOn = !soundOn;
-  ['soundBtn', 'gdSoundBtn'].forEach((id) => { const e = $(id); if (e) e.textContent = soundOn ? '🔊' : '🔇'; });
+  ['soundBtn', 'gdSoundBtn', 'c4SoundBtn'].forEach((id) => { const e = $(id); if (e) e.textContent = soundOn ? '🔊' : '🔇'; });
   const sv = $('setSoundVal'); if (sv) sv.textContent = soundOn ? '开' : '关';
   if (soundOn) beep('click');
 }
 $('soundBtn') && $('soundBtn').addEventListener('click', toggleSound);
 $('gdSoundBtn') && $('gdSoundBtn').addEventListener('click', toggleSound);
+$('c4SoundBtn') && $('c4SoundBtn').addEventListener('click', toggleSound);
 
 /* ---------- v3.1 顶栏：悄悄话 / 设置 / 退出主菜单 ---------- */
 function clearUnread() {
   unreadChat = 0;
-  ['chatBadge', 'gdChatBadge', 'chatUnread', 'gdChatUnread'].forEach((id) => {
+  ['chatBadge', 'gdChatBadge', 'c4ChatBadge', 'chatUnread', 'gdChatUnread', 'c4ChatUnread'].forEach((id) => {
     const e = $(id); if (e) { e.classList.add('hidden'); e.textContent = '0'; }
   });
 }
 function openChat() {
-  const isG = st && st.gameKind === 'garden';
-  const p = isG ? $('gdChatPanel') : $('chatPanel'); if (!p) return;
+  const gk = st && st.gameKind;
+  const p = gk === 'garden' ? $('gdChatPanel') : (gk === 'connect4' ? $('c4ChatPanel') : $('chatPanel')); if (!p) return;
   p.open = true; clearUnread();
   p.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 $('chatBtn') && $('chatBtn').addEventListener('click', () => { beep('click'); openChat(); });
 $('gdChatBtn') && $('gdChatBtn').addEventListener('click', () => { beep('click'); openChat(); });
+$('c4ChatBtn') && $('c4ChatBtn').addEventListener('click', () => { beep('click'); openChat(); });
 ['chatPanel', 'gdChatPanel'].forEach((id) => {
   const e = $(id); if (e) e.addEventListener('toggle', () => { if (e.open) clearUnread(); });
 });
@@ -114,19 +116,24 @@ let _monoHelp = null;
 function openSettings() {
   $('setRoomInfo').textContent = '房间 ' + ((st && st.code) || S.code || '------');
   $('setSoundVal').textContent = soundOn ? '开' : '关';
-  const isG = st && st.gameKind === 'garden';
-  // 花园房：玩法速览换成花园说明、重开按钮改成「重置花园」
+  const gk = st && st.gameKind;
+  const isG = gk === 'garden';
+  const isC4 = gk === 'connect4';
+  // 花园房 / 四子棋房：玩法速览换成本游戏说明、重开按钮文案同步
   const help = document.querySelector('.set-help');
   if (help) {
     if (_monoHelp === null) _monoHelp = help.innerHTML;
     help.innerHTML = isG
       ? '<b>花园玩法速览</b><br>选个道具点空地种花/摆装饰 · 点有苗的地浇水<br>两人一起浇水、合种树、送花、留言才会涨爱心 💗<br>🌰 种子会按真实时间发芽、开花，常回来看看～'
+      : isC4
+      ? '<b>四子棋玩法</b><br>7 列×6 行棋盘，两人各执一种颜色的爱心 💗粉 / 💙蓝<br>轮流选一列，爱心会掉到该列最底，先把 4 颗心连成一线（横/竖/斜）就赢～<br>谁先连成谁赢，棋盘填满则平局。'
       : _monoHelp;
   }
   const rr = $('setRestart');
   if (rr) {
-    rr.firstChild.textContent = isG ? '🔄 重置花园 ' : '🔄 重开本局 ';
-    const sp = rr.querySelector('span'); if (sp) sp.textContent = isG ? '清空花园重新开始' : '双方回到等待页';
+    const label = isG ? '🔄 重置花园 ' : (isC4 ? '🔄 重开对局 ' : '🔄 重开本局 ');
+    rr.firstChild.textContent = label;
+    const sp = rr.querySelector('span'); if (sp) sp.textContent = isG ? '清空花园重新开始' : (isC4 ? '清空棋盘再来一局' : '双方回到等待页');
   }
   $('settings').classList.remove('hidden');
 }
@@ -134,7 +141,7 @@ function closeSettings() { $('settings').classList.add('hidden'); }
 function doLeave() {
   socket.emit('leaveRoom');
   clearSession(); st = null; board = null; boardBuilt = false; clearUnread();
-  resetZoom(); resetGardenUI();
+  resetZoom(); resetGardenUI(); resetConnect4UI();
   $('over').classList.add('hidden'); $('settings').classList.add('hidden');
   show('lobby');
 }
@@ -143,9 +150,13 @@ $('setClose') && $('setClose').addEventListener('click', closeSettings);
 $('settings') && $('settings').addEventListener('click', (e) => { if (e.target.id === 'settings') closeSettings(); });
 $('setSound') && $('setSound').addEventListener('click', toggleSound);
 $('setRestart') && $('setRestart').addEventListener('click', () => {
-  const isG = st && st.gameKind === 'garden';
-  if (!window.confirm(isG ? '重置花园？所有植物、装饰和留言会清空，重新开始。'
-                          : '重开本局？当前进度会清空，双方一起回到等待页重新选择模式。')) return;
+  const gk = st && st.gameKind;
+  const isG = gk === 'garden';
+  const isC4 = gk === 'connect4';
+  const msg = isG ? '重置花园？所有植物、装饰和留言会清空，重新开始。'
+    : isC4 ? '重开对局？当前棋盘会清空，双方一起回到等待页再来一局。'
+    : '重开本局？当前进度会清空，双方一起回到等待页重新选择模式。';
+  if (!window.confirm(msg)) return;
   closeSettings();
   if (isG) socket.emit('gardenAction', { action: 'reset' });
   else socket.emit('endSession');
@@ -161,7 +172,7 @@ $('exitBtn') && $('exitBtn').addEventListener('click', () => {
 
 /* ---------- 屏幕切换 ---------- */
 function show(which) {
-  ['lobby', 'waiting', 'game', 'garden'].forEach((x) => $(x).classList.toggle('hidden', x !== which));
+  ['lobby', 'waiting', 'game', 'garden', 'connect4'].forEach((x) => $(x).classList.toggle('hidden', x !== which));
   window.scrollTo(0, 0);
 }
 function showOverlay(title, desc, btns) {
@@ -194,9 +205,9 @@ Object.keys(GROUP_KEY).forEach((id) => bindGroup(id, GROUP_KEY[id]));
 // v4.0 游戏合集：情侣大富翁 + 共享小花园 两款可玩，其余 coming soon 占位
 const gkBtns = $('gameKindBtns');
 function syncGameKindUI() {
-  const isG = sel.gameKind === 'garden';
-  const opts = $('monopolyOpts'); if (opts) opts.classList.toggle('hidden', isG);
-  const cbtn = $('createBtn'); if (cbtn) cbtn.textContent = isG ? '🌷 创建小花园' : '✨ 创建房间';
+  const isMono = sel.gameKind === 'monopoly';
+  const opts = $('monopolyOpts'); if (opts) opts.classList.toggle('hidden', !isMono);
+  const cbtn = $('createBtn'); if (cbtn) cbtn.textContent = sel.gameKind === 'garden' ? '🌷 创建小花园' : '✨ 创建房间';
 }
 if (gkBtns) gkBtns.addEventListener('click', (e) => {
   const b = e.target.closest('.game-card:not(.soon)'); if (!b) return;
@@ -231,14 +242,19 @@ $('copyCode').onclick = () => {
   $('copyCode').textContent = '✅ 已复制 ' + t; setTimeout(() => $('copyCode').textContent = '📋 复制房间号', 1600);
 };
 $('startBtn').onclick = () => { beep('click'); socket.emit('startGame', { ...sel }); };
-$('backBtn').onclick = () => { if (S.code) socket.emit('leaveRoom'); clearSession(); st = null; board = null; boardBuilt = false; clearUnread(); resetGardenUI(); show('lobby'); };
+$('backBtn').onclick = () => { if (S.code) socket.emit('leaveRoom'); clearSession(); st = null; board = null; boardBuilt = false; clearUnread(); resetGardenUI(); resetConnect4UI(); show('lobby'); };
 $('againBtn').onclick = () => { beep('click'); $('over').classList.add('hidden'); socket.emit('restart'); };
-$('homeBtn').onclick = () => { if (S.code) socket.emit('leaveRoom'); clearSession(); st = null; board = null; boardBuilt = false; clearUnread(); resetGardenUI(); $('over').classList.add('hidden'); show('lobby'); };
+$('homeBtn').onclick = () => { if (S.code) socket.emit('leaveRoom'); clearSession(); st = null; board = null; boardBuilt = false; clearUnread(); resetGardenUI(); resetConnect4UI(); $('over').classList.add('hidden'); show('lobby'); };
 $('chatSend').onclick = () => {
   const v = ($('chatInput').value || '').trim(); if (!v) return;
   socket.emit('chat', { text: v }); $('chatInput').value = '';
 };
 $('chatInput') && $('chatInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('chatSend').click(); });
+$('c4ChatSend') && ($('c4ChatSend').onclick = () => {
+  const v = ($('c4ChatInput').value || '').trim(); if (!v) return;
+  socket.emit('chat', { text: v }); $('c4ChatInput').value = '';
+});
+$('c4ChatInput') && $('c4ChatInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('c4ChatSend').click(); });
 
 /* ---------- Socket 事件 ---------- */
 socket.on('errorMsg', (m) => { $('lobbyMsg').textContent = m; toast('⚠️ ' + m); });
@@ -288,21 +304,22 @@ socket.on('roomClosed', ({ by }) => {
 });
 socket.on('sessionEnded', ({ by }) => { toast('🔄 ' + (by || '对方') + ' 结束了本局，回到等待页'); beep('click'); });
 socket.on('chat', ({ name, text, color }) => {
-  // v4.0：同一条消息写入两个视图各自的聊天框（大富翁 / 花园）
-  ['chatList', 'gdChatList'].forEach((id) => {
+  // v4.0：同一条消息写入各视图各自的聊天框（大富翁 / 花园 / 四子棋）
+  ['chatList', 'gdChatList', 'c4ChatList'].forEach((id) => {
     const c = $(id); if (!c) return;
     const d = el('div', 'chat-msg'); d.innerHTML = `<b style="color:${color}">${escapeHtml(name)}</b>：${escapeHtml(text)}`;
     c.appendChild(d); c.scrollTop = c.scrollHeight;
   });
   // 折叠时也能看到：未读角标 + 弹窗式气泡（按当前所在游戏挑对应面板）
-  const isG = st && st.gameKind === 'garden';
-  const panel = isG ? $('gdChatPanel') : $('chatPanel');
+  const gk = st && st.gameKind;
+  const isG = gk === 'garden', isC4 = gk === 'connect4';
+  const panel = isG ? $('gdChatPanel') : (isC4 ? $('c4ChatPanel') : $('chatPanel'));
   if (!panel || !panel.open) {
     unreadChat++;
-    [isG ? 'gdChatBadge' : 'chatBadge'].forEach((id) => {
+    [isG ? 'gdChatBadge' : (isC4 ? 'c4ChatBadge' : 'chatBadge')].forEach((id) => {
       const b = $(id); if (b) { b.textContent = String(Math.min(99, unreadChat)); b.classList.remove('hidden'); }
     });
-    [isG ? 'gdChatUnread' : 'chatUnread'].forEach((id) => {
+    [isG ? 'gdChatUnread' : (isC4 ? 'c4ChatUnread' : 'chatUnread')].forEach((id) => {
       const u = $(id); if (u) { u.textContent = String(unreadChat); u.classList.remove('hidden'); }
     });
   }
@@ -428,6 +445,10 @@ function tryRender() {
     if (!st.started) { renderWaiting(); return; }
     hideOverlay(); show('garden'); renderGarden(); return;
   }
+  if (st.gameKind === 'connect4') {       // v4.4 主题四子棋：完全独立的视图与渲染
+    if (!st.started) { renderWaiting(); return; }
+    hideOverlay(); show('connect4'); renderConnect4(); return;
+  }
   if (!st.started) { renderWaiting(); return; }
   if (!board) return;                     // 等 board 到达
   if (board.boardVersion !== st.boardVersion) { socket.emit('requestSync'); return; }
@@ -450,6 +471,7 @@ function tryRender() {
 function renderWaiting() {
   show('waiting');
   const isG = st.gameKind === 'garden';
+  const isMono = st.gameKind === 'monopoly';
   $('roomCode').textContent = st.code || S.code || '------';
   const box = $('waitPlayers'); box.innerHTML = '';
   st.players.forEach((p) => {
@@ -460,12 +482,12 @@ function renderWaiting() {
   $('waitHint').textContent = n >= 2
     ? (isG ? '两人都到齐啦，房主点「进入花园」一起布置～（2/2）' : '两人都到齐啦，房主点开始游戏～（2/2）')
     : '等待另一位玩家加入…（1/2）';
-  // 花园房用不到主题/模式/节奏，隐藏设置；标题与按钮文案也切换
-  $('waitSetup').classList.toggle('hidden', !isHost || isG);
+  // 花园房 / 四子棋房用不到主题/模式/节奏，隐藏设置；标题与按钮文案也切换
+  $('waitSetup').classList.toggle('hidden', !isHost || !isMono);
   const sb = $('startBtn');
-  sb.textContent = isG ? '🌷 进入花园' : '🎮 开始游戏';
+  sb.textContent = isG ? '🌷 进入花园' : (st.gameKind === 'connect4' ? '💗 开始四子棋' : '🎮 开始游戏');
   sb.classList.toggle('hidden', !(isHost && n >= 2));
-  if (!isG) syncWaitBtns();
+  if (isMono) syncWaitBtns();
 }
 
 /* ==================================================================
@@ -719,6 +741,134 @@ function resetGardenUI() {
   boardBuilt = false;              // 从花园回大富翁时强制重建棋盘
   const grid = $('gdGrid'); if (grid) grid.innerHTML = '';
   if (gdTimer) { clearInterval(gdTimer); gdTimer = null; }
+}
+
+/* ==================================================================
+ * v4.4 主题四子棋（爱心版 Connect Four · 7×6 竖屏）
+ * 服务器权威：只发 connect4Action({col})，按广播回来的 state 重绘。
+ * 棋盘数据在 st.board（二维数组，board[r][c] = 0/1/null），
+ * who=0 → 粉心、who=1 → 蓝心，与 st.colors / st.players 下标一致。
+ * ================================================================== */
+let c4Built = false, c4CellEls = [], c4ColEls = [];
+let c4LastDropKey = '', c4WinnerKey = '';
+function resetConnect4UI() {
+  c4Built = false; c4CellEls = []; c4ColEls = []; c4LastDropKey = ''; c4WinnerKey = '';
+  ['c4Board', 'c4Cols', 'c4Players', 'c4Log', 'c4ChatList'].forEach((id) => { const e = $(id); if (e) e.innerHTML = ''; });
+}
+function c4Heart(color) {
+  return `<svg class="c4-heart" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+    <path d="M12 21C3 14 2 7 7 5c3-1.2 5 1 5 1s2-2.2 5-1c5 2 4 9-5 16z" fill="${color}"/>
+    <path d="M7.2 7.4c2.4-1 3.8.4 4.8 1.6" stroke="rgba(255,255,255,.55)" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg>`;
+}
+function buildConnect4Grid(c) {
+  const colsWrap = $('c4Cols'); colsWrap.innerHTML = ''; c4ColEls = [];
+  for (let col = 0; col < c.cols; col++) {
+    const b = el('button', 'c4-col', '↓');
+    b.dataset.col = String(col);
+    b.onclick = () => { if (b.disabled) return; beep('click'); socket.emit('connect4Action', { col }); };
+    colsWrap.appendChild(b); c4ColEls.push(b);
+  }
+  const boardEl = $('c4Board'); boardEl.innerHTML = '';
+  boardEl.style.gridTemplateColumns = `repeat(${c.cols},1fr)`;
+  boardEl.style.gridTemplateRows = `repeat(${c.rows},1fr)`;
+  c4CellEls = [];
+  for (let r = 0; r < c.rows; r++) {
+    const row = [];
+    for (let col = 0; col < c.cols; col++) {
+      const cell = el('div', 'c4-cell empty');
+      cell.dataset.col = String(col);
+      cell.addEventListener('click', () => { if (cell.dataset.full) return; beep('click'); socket.emit('connect4Action', { col }); });
+      boardEl.appendChild(cell); row.push(cell);
+    }
+    c4CellEls.push(row);
+  }
+  c4Built = true;
+}
+function renderConnect4() {
+  const c = st;
+  if (!c) return;
+  $('c4Code').textContent = c.code || S.code || '------';
+  const players = c.players || [];
+  const myIdx = players.findIndex((p) => p.isYou);
+  const turnWho = c.turn || 0;
+  const ended = c.winner !== null || !!c.draw;
+
+  // 顶栏回合文字
+  let turnTxt = '准备中';
+  if (c.winner !== null) { const w = players[c.winner]; turnTxt = '💞 ' + (w ? w.name : 'TA') + ' 赢啦！'; }
+  else if (c.draw) { turnTxt = '🤝 平局～再来一局？'; }
+  else if (players.length >= 2 && c.started) { const t = players[turnWho]; turnTxt = (t ? t.name : 'TA') + ' 的回合'; }
+  $('c4Turn').textContent = turnTxt;
+
+  // 双方玩家卡（颜色 + 当前回合高亮）
+  const duo = $('c4Players'); duo.innerHTML = '';
+  players.forEach((p, i) => {
+    const color = (c.colors && c.colors[i]) || '#ccc';
+    const d = el('div', 'pbox' + (turnWho === i && !ended ? ' active' : ''));
+    d.innerHTML = `<img class="pav" src="${avatarSrc(p, i)}"><div class="pinfo">
+      <div class="pname">${escapeHtml(p.name)}${p.isYou ? ' <span class="you-tag">你</span>' : ''}</div>
+      <div class="pmeta"><span class="c4-dot" style="background:${color}"></span>${p.connected ? '已就位' : '掉线'}</div></div>`;
+    duo.appendChild(d);
+  });
+
+  // 棋盘（只建一次）
+  if (!c4Built) buildConnect4Grid(c);
+
+  // 落子 + 四连高亮
+  const winSet = new Set((c.winCells || []).map(([r, cc]) => r + ',' + cc));
+  const board = c.board || [];
+  for (let r = 0; r < c.rows; r++) {
+    for (let col = 0; col < c.cols; col++) {
+      const cell = c4CellEls[r][col];
+      const v = board[r] ? board[r][col] : null;
+      let cls = 'c4-cell';
+      if (v === null) cls += ' empty';
+      else cls += (v === 0 ? ' p0' : ' p1');
+      if (winSet.has(r + ',' + col)) cls += ' win';
+      cell.className = cls;
+      cell.dataset.full = (v !== null) ? '1' : '';
+      cell.innerHTML = v === null ? '' : c4Heart((c.colors && c.colors[v]) || '#999');
+    }
+  }
+
+  // 列按钮：高亮可落子的列、禁用已满/非己回合
+  const myTurn = !ended && players.length >= 2 && turnWho === myIdx;
+  for (let col = 0; col < c.cols; col++) {
+    const btn = c4ColEls[col]; if (!btn) continue;
+    const full = board[0] ? board[0][col] !== null : false;
+    const dis = !myTurn || full;
+    btn.disabled = dis;
+    btn.classList.toggle('active', myTurn && !full);
+    btn.classList.toggle('full', full);
+  }
+
+  // 落子动画（仅在真正有新落子时触发）
+  const dk = c.lastDrop ? (c.lastDrop.row + ',' + c.lastDrop.col + ',' + c.lastDrop.who + ',' + c.moves) : '';
+  if (dk && dk !== c4LastDropKey && c4CellEls[c.lastDrop.row] && c4CellEls[c.lastDrop.row][c.lastDrop.col]) {
+    c4LastDropKey = dk;
+    const cell = c4CellEls[c.lastDrop.row][c.lastDrop.col];
+    cell.classList.remove('drop'); void cell.offsetWidth; cell.classList.add('drop');
+    beep(c.lastDrop.who === myIdx ? 'coin' : 'click');
+  }
+
+  // 胜利特效（仅触发一次）
+  if (c.winner !== null) {
+    const wk = c.winner + ',' + c.moves;
+    if (wk !== c4WinnerKey) {
+      c4WinnerKey = wk; beep('win'); confetti(90);
+      toast('💞 ' + (players[c.winner] ? players[c.winner].name : 'TA') + ' 赢啦！');
+    }
+  }
+
+  // 对局日志
+  const lg = $('c4Log');
+  if (lg) {
+    const logs = c.log || [];
+    lg.innerHTML = logs.length ? logs.map((l) => `<div>· ${escapeHtml(l.msg || '')}</div>`).join('')
+      : '<div class="gd-empty">还没有动静，选一列开始吧～</div>';
+  }
+
+  paintGdIcons($('connect4'));      // 互动条 / 提示图标用 SVG
 }
 
 /* ---------- 环形棋盘：只建一次 ---------- */
@@ -1393,6 +1543,10 @@ $('interactBtns') && $('interactBtns').addEventListener('click', (e) => {
   if (k === 'money') { $('moneySheet').classList.remove('hidden'); return; }
   socket.emit('interact', { kind: k });
 });
+$('c4InteractBtns') && $('c4InteractBtns').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  beep('click'); socket.emit('interact', { kind: b.dataset.k });
+});
 $('moneyOpts') && $('moneyOpts').addEventListener('click', (e) => {
   const b = e.target.closest('button'); if (!b) return;
   socket.emit('interact', { kind: 'money', amount: Number(b.dataset.v) });
@@ -1427,6 +1581,11 @@ function resetZoom() {
 /* ========== v4.0 共享小花园：交互绑定 ========== */
 $('gdSettingsBtn') && $('gdSettingsBtn').addEventListener('click', () => { beep('click'); openSettings(); });
 $('gdExitBtn') && $('gdExitBtn').addEventListener('click', () => {
+  if (!window.confirm('返回主菜单？会解散当前房间，对方也会回到大厅。')) return;
+  doLeave();
+});
+$('c4SettingsBtn') && $('c4SettingsBtn').addEventListener('click', () => { beep('click'); openSettings(); });
+$('c4ExitBtn') && $('c4ExitBtn').addEventListener('click', () => {
   if (!window.confirm('返回主菜单？会解散当前房间，对方也会回到大厅。')) return;
   doLeave();
 });

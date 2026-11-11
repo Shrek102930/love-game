@@ -802,3 +802,40 @@ h2{font-size:18px;margin:0 0 8px}
   .ow-reason{font-size:13px}
   .oa-net{font-size:13.5px}
 }
+
+/* ==================================================================
+ * v4.4 主题四子棋（爱心版 Connect Four · 7×6 竖屏）
+ * 复用顶栏 / players / panel / interact-bar 等通用样式，
+ * 这里只补棋盘与爱心棋子相关样式。
+ * ================================================================== */
+.c4-hint{text-align:center;font-size:11.5px;color:#8a7186;background:rgba(255,255,255,.8);
+  border-radius:10px;padding:6px;margin-bottom:8px;font-weight:600;line-height:1.4}
+.c4-board-wrap{background:linear-gradient(160deg,#5b8ff9,#7aa6f5);border-radius:22px;padding:11px 11px 13px;
+  box-shadow:0 10px 26px rgba(91,143,249,.32);border:2px solid #fff;margin-bottom:8px;position:relative;overflow:hidden}
+.c4-board-wrap::before{content:'';position:absolute;inset:0;
+  background:radial-gradient(circle at 50% -10%,rgba(255,255,255,.35),transparent 60%);pointer-events:none}
+.c4-cols{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-bottom:7px;position:relative}
+.c4-col{background:rgba(255,255,255,.28);color:#fff;font-size:15px;font-weight:800;border-radius:9px;
+  padding:5px 0;line-height:1;box-shadow:inset 0 1px 2px rgba(0,0,0,.12)}
+.c4-col.active{background:rgba(255,255,255,.94);color:#3b6fd4;box-shadow:0 0 0 2px #fff,0 2px 8px rgba(0,0,0,.18);
+  animation:c4ColPulse 1.3s ease-in-out infinite}
+.c4-col:disabled{opacity:.4}
+.c4-col.full{opacity:.2}
+@keyframes c4ColPulse{0%,100%{transform:translateY(0)}50%{transform:translateY(1px)}}
+.c4-board{display:grid;gap:5px;position:relative}
+.c4-cell{position:relative;aspect-ratio:1/1;border-radius:50%;
+  background:radial-gradient(circle at 36% 30%,#ffffff,#cfe0ff);
+  box-shadow:inset 0 3px 6px rgba(40,70,140,.5),0 1px 0 rgba(255,255,255,.5);
+  display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer}
+.c4-cell .c4-heart{width:80%;height:80%;display:block;
+  filter:drop-shadow(0 2px 2px rgba(0,0,0,.18));animation:c4Pop .25s ease}
+.c4-cell.win{animation:c4Win .7s ease-in-out infinite;z-index:2}
+.c4-cell.win .c4-heart{animation:c4HeartBeat .7s ease-in-out infinite}
+.c4-cell.drop{animation:c4Drop .3s cubic-bezier(.3,1.3,.6,1)}
+.c4-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;vertical-align:middle;
+  box-shadow:0 0 0 1px rgba(0,0,0,.06)}
+@keyframes c4Pop{0%{transform:scale(.6)}70%{transform:scale(1.12)}100%{transform:scale(1)}}
+@keyframes c4Drop{0%{transform:translateY(-230%);opacity:.35}100%{transform:translateY(0);opacity:1}}
+@keyframes c4Win{0%,100%{box-shadow:inset 0 3px 6px rgba(40,70,140,.5),0 0 0 0 rgba(255,255,255,0)}
+  50%{box-shadow:inset 0 3px 6px rgba(40,70,140,.5),0 0 0 4px rgba(255,255,255,.9),0 0 18px 5px rgba(255,215,120,.95)}}
+@keyframes c4HeartBeat{0%,100%{transform:scale(1)}50%{transform:scale(1.16)}}

@@ -4,9 +4,9 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 <title>💕 两个人的游戏屋 · 情侣异地联机小游戏合集</title>
-<meta name="app-version" content="v4.3" />
+<meta name="app-version" content="v4.4" />
 <meta name="theme-color" content="#ff8faa" />
-<link rel="stylesheet" href="/style.css?v=11" />
+<link rel="stylesheet" href="/style.css?v=12" />
 </head>
 <body>
 
@@ -40,10 +40,10 @@
           <span class="gc-name">共享小花园</span>
           <span class="gc-tag">2.5D · 一起养</span>
         </button>
-        <button class="game-card soon" disabled>
-          <img class="gc-emoji" src="/assets/ic-chance.png" alt="" />
-          <span class="gc-name">更多小游戏</span>
-          <span class="gc-tag">敬请期待</span>
+        <button class="game-card" data-v="connect4">
+          <img class="gc-emoji" src="/assets/ic-heart.png" alt="" />
+          <span class="gc-name">主题四子棋</span>
+          <span class="gc-tag">爱心连线 · 抢先四连</span>
         </button>
       </div>
     </div>
@@ -312,6 +312,61 @@
   </div>
 </div>
 
+<!-- ============ v4.4 主题四子棋（爱心版 Connect Four · 7×6 竖屏） ============ -->
+<div id="connect4" class="hidden">
+  <div class="game-wrap">
+    <!-- 顶栏 -->
+    <div class="topbar">
+      <div class="room">房间 <b id="c4Code">------</b></div>
+      <div class="turn" id="c4Turn">准备中</div>
+      <div class="topbtns">
+        <button id="c4ChatBtn" class="icon-btn" title="悄悄话">💬<span id="c4ChatBadge" class="badge hidden">0</span></button>
+        <button id="c4SoundBtn" class="icon-btn" title="音效开关">🔊</button>
+        <button id="c4SettingsBtn" class="icon-btn" title="设置">⚙️</button>
+        <button id="c4ExitBtn" class="icon-btn" title="返回主菜单">🏠</button>
+      </div>
+    </div>
+
+    <!-- 双方玩家卡 -->
+    <div class="players" id="c4Players"></div>
+    <!-- 回合 / 提示 -->
+    <div class="c4-hint" id="c4Hint">你俩轮流选一列，先把 4 颗心连成一线就赢～</div>
+
+    <!-- 棋盘：7 列×6 行竖屏 -->
+    <div class="c4-board-wrap">
+      <div class="c4-cols" id="c4Cols"></div>
+      <div class="c4-board" id="c4Board"></div>
+    </div>
+
+    <!-- 双人互动（与大富翁 / 花园共用 interact 事件 / 飘动画层） -->
+    <div class="interact-bar gd-interact">
+      <div class="ib-head"><span class="gd-tip-ico" data-ico="love"></span> 互动一下 <span>随时给 TA 一点小动静</span></div>
+      <div class="ib-btns" id="c4InteractBtns">
+        <button data-k="heart" type="button"><i data-ico="heart"></i><span>比心</span></button>
+        <button data-k="poke" type="button"><i data-ico="poke"></i><span>戳戳</span></button>
+        <button data-k="gift" type="button"><i data-ico="gift"></i><span>送礼</span></button>
+        <button data-k="rps" type="button"><i data-ico="rps"></i><span>猜拳</span></button>
+      </div>
+    </div>
+
+    <!-- 日志 -->
+    <details class="panel"><summary>📜 对局日志</summary><div class="log" id="c4Log"></div></details>
+
+    <!-- 悄悄话 -->
+    <details class="panel" id="c4ChatPanel">
+      <summary>💬 悄悄话 <span id="c4ChatUnread" class="unread hidden">0</span></summary>
+      <div class="chatlog" id="c4ChatList"></div>
+      <div class="chatrow"><input id="c4ChatInput" maxlength="40" placeholder="说点什么…" /><button id="c4ChatSend">发送</button></div>
+    </details>
+
+    <footer class="copyright">
+      <span class="cr-line"></span>
+      <span>© 2026 <b>寻找格陵兰</b> · 版权所有</span>
+      <span class="cr-line"></span>
+    </footer>
+  </div>
+</div>
+
 <!-- ============ 通用弹窗层：买地 / 拍卖 / 小游戏 / 人生选择 ============ -->
 <div id="modal" class="modal hidden">
   <div class="modal-card" id="modalCard"></div>
@@ -435,6 +490,6 @@
 <div id="interactFxLayer" class="interact-fx-layer"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="/game.js?v=10"></script>
+<script src="/game.js?v=11"></script>
 </body>
 </html>
