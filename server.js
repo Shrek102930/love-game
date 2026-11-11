@@ -461,7 +461,7 @@ function buildGame(room) {
     p.pos = GO_INDEX; p.money = theme.startMoney; p.props = {}; p.mortgaged = {};
     p.items = { freeRent: 0 }; p.inJail = false; p.jailTurns = 0;
     p.bankrupt = false; p.laps = 0;
-    if (!p.avatar || !AVATAR_IDS.includes(p.avatar)) p.avatar = i === 0 ? 'boy' : 'girl'; // v3.2 保留玩家自选头像
+    if (!p.avatar || (!AVATAR_IDS.includes(p.avatar) && p.avatar !== 'custom')) p.avatar = i === 0 ? 'boy' : 'girl'; // v3.2 保留玩家自选头像（含自定义照片）
     p.savings = 0; p.loan = 0; p.cars = 0; p.carBoost = 0;
   });
   pushLog(room, `游戏开始！${theme.name} · ${m.name} · ${pace.name}节奏（${m.desc}）`);
@@ -1541,7 +1541,7 @@ io.on('connection', (socket) => {
       theme: THEMES[theme] ? theme : 'city',
       mode: MODES[mode] ? mode : 'classic', pace: PACES[pace] ? pace : 'standard',
       ver: 0, players: [makePlayer(socket.id, name, '#ff5e7e', genToken())], game: null };
-    room.players[0].avatar = AVATAR_IDS.includes(avatar) ? avatar : 'boy';
+    room.players[0].avatar = (AVATAR_IDS.includes(avatar) || avatar === 'custom') ? avatar : 'boy';
     rooms.set(code, room);
     tokens.set(room.players[0].token, { code, playerId: socket.id });
     socket.join(code);
@@ -1556,13 +1556,17 @@ io.on('connection', (socket) => {
     if (room.players.length >= 2) return socket.emit('errorMsg', '房间已满');
     if (room.game || room.connect4) return socket.emit('errorMsg', '游戏已开始，无法加入');
     const p = makePlayer(socket.id, name, '#5b8ff9', genToken());
-    p.avatar = AVATAR_IDS.includes(avatar) ? avatar : 'girl';
+    p.avatar = (AVATAR_IDS.includes(avatar) || avatar === 'custom') ? avatar : 'girl';
     room.players.push(p);
     tokens.set(p.token, { code: room.code, playerId: socket.id });
     socket.join(room.code);
     socket.emit('joined', { code: room.code });
     sendBoard(room);
     broadcast(room);
+    // 把已有玩家的自定义头像重新广播给全房间（含刚加入者），保证双方都能看到对方自定义头像
+    room.players.forEach((pp, idx) => {
+      if (pp.avatar === 'custom' && pp.avatarData) io.to(room.code).emit('avatarImage', { idx, data: pp.avatarData });
+    });
   });
 
   socket.on('reconnect', ({ code, token, name }) => {

@@ -573,7 +573,8 @@ h2{font-size:18px;margin:0 0 8px}
 /* ④ 棋子层提到最顶（高于 pulse 的 6），头像永不被格子盖住 */
 .pawn-layer{z-index:9}
 @media (max-width:360px){
-  .board{min-width:376px}
+  .board{min-width:0}      /* v4.4 修复：≤360px 窄屏不再强制 376px，避免棋盘右缘被裁出屏幕 */
+  .board-frame{margin:0}   /* v4.4 修复：窄屏取消 -8px 外扩，避免棋盘框超出屏幕产生横向滚动 */
   .tile .ti{width:18px;height:18px}
   .tile.corner .ti{width:20px;height:20px}
   .tile .tn{font-size:9px}

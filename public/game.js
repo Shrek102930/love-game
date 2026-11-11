@@ -1523,6 +1523,7 @@ function toast(msg) {
 }
 /* ========== v3.2 初始化与交互绑定 ========== */
 loadAvatarLocal(); updateAvatarPreview();
+if (S.name && $('nameInput')) $('nameInput').value = S.name;   // v4.4：回填上次用的昵称，避免每次重输
 $('avatarPickBtn') && $('avatarPickBtn').addEventListener('click', () => { beep('click'); openAvatarModal(); });
 $('setAvatar') && $('setAvatar').addEventListener('click', () => { beep('click'); closeSettings(); openAvatarModal(); });
 $('avatarClose') && $('avatarClose').addEventListener('click', closeAvatarModal);
