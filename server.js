@@ -25,6 +25,7 @@ const PORT = process.env.PORT || 3000;
 const SAVE_DIR = path.join(__dirname, 'saves');
 if (!fs.existsSync(SAVE_DIR)) fs.mkdirSync(SAVE_DIR, { recursive: true });
 const BOARD_VERSION = 6; // v3.3：双环52格/岔路/内环玩法，旧存档自动作废
+const GARDEN_VERSION = 1; // v4.0：共享小花园（沙盒·2.5D 等距）存档版本
 
 /* 灰度开关（默认全开；出问题把对应项设 0 即可回退某项能力） */
 const F = {
@@ -212,6 +213,7 @@ const GO_INDEX = 0;
  * 房间/连接/同步/存档这套共享底座无需复制。 */
 const GAME_KINDS = {
   monopoly: { name: '情侣大富翁', icon: '🎲', tag: '52 格双环 · 岔路抄近道', ready: true },
+  garden:   { name: '共享小花园', icon: '🌷', tag: '2.5D 等距 · 一起养', ready: true },
 };
 const MODES = {
   classic: { name: '经典对战', maxRounds: 30, targetLaps: 0, coopTarget: 0, heartTarget: 0,
@@ -461,13 +463,16 @@ function buildGame(room) {
   pushLog(room, `每人初始资金 ${theme.startMoney}，52 格双环棋盘（外环 40 + 内环 12），4 个岔路口可抄近道，出发！`);
 }
 function pushLog(room, msg) {
-  if (!room.game) return;
-  room.game.log.unshift({ t: Date.now(), msg });
-  if (room.game.log.length > 40) room.game.log.pop();
+  const target = room.game || room.garden;   // v4.0：花园无 room.game，日志落到 room.garden.log
+  if (!target) return;
+  target.log = target.log || [];
+  target.log.unshift({ t: Date.now(), msg });
+  if (target.log.length > 40) target.log.pop();
 }
 
 /* 静态棋盘定义：只在连接/开局/重连时单独下发一次 */
 function boardState(room) {
+  if (room.gameKind === 'garden') return gardenBoard(room);   // v4.0 共享小花园
   return {
     boardVersion: BOARD_VERSION, gameKind: room.gameKind || 'monopoly',
     theme: room.theme, themeName: THEMES[room.theme].name,
@@ -481,6 +486,7 @@ function boardState(room) {
 
 /* 瘦身状态：tiles 只发动态摘要 [ownerIdx|null, level, mortgaged] */
 function publicState(room, forId) {
+  if (room.gameKind === 'garden') return gardenPublicState(room, forId);  // v4.0 共享小花园
   const g = room.game;
   const tiles = THEMES[room.theme].tiles;
   const td = tiles.map((_, i) => {
@@ -610,6 +616,7 @@ function advanceTurn(room, samePlayer) {
   }
 }
 function setFx(room, fx, text) {
+  if (!room.game) return;   // v4.0：花园房无 room.game，飘动画由 interactFx 事件负责
   room.game.fxId = (room.game.fxId || 0) + 1;
   room.game.eventFx = { kind: fx, text: text || '' };
   room.game.lastEvent = { type: 'info', text: text || '' };
@@ -1330,7 +1337,7 @@ function schedulePersist(room) {
 }
 function persistRoom(room) {
   const data = {
-    boardVersion: BOARD_VERSION, code: room.code, gameKind: room.gameKind || 'monopoly', theme: room.theme, mode: room.mode,
+    boardVersion: BOARD_VERSION, gardenVersion: GARDEN_VERSION, code: room.code, gameKind: room.gameKind || 'monopoly', theme: room.theme, mode: room.mode,
     pace: room.pace, ver: room.ver || 0,
     players: room.players.map((p) => ({
       name: p.name, color: p.color, token: p.token, avatar: p.avatar, avatarData: p.avatarData || null,
@@ -1339,6 +1346,7 @@ function persistRoom(room) {
       savings: p.savings || 0, loan: p.loan || 0, cars: p.cars || 0, carBoost: p.carBoost || 0,
     })),
     game: room.game ? { ...room.game, tileDyn: undefined, moveSteps: [], eventFx: null, mini: null } : null,
+    garden: room.garden ? room.garden : null,   // v4.0：共享小花园存档
   };
   try { fs.writeFile(path.join(SAVE_DIR, room.code + '.json'), JSON.stringify(data), () => {}); } catch (e) {}
 }
@@ -1353,11 +1361,14 @@ function loadSaves() {
   for (const f of files) {
     try {
       const data = JSON.parse(fs.readFileSync(path.join(SAVE_DIR, f), 'utf8'));
-      if (data.boardVersion !== BOARD_VERSION) { fs.unlinkSync(path.join(SAVE_DIR, f)); continue; } // 旧版存档作废
+      // 版本校验：花园看 gardenVersion，其余看 boardVersion；旧版存档作废
+      if (data.gameKind === 'garden') {
+        if (data.gardenVersion !== GARDEN_VERSION) { fs.unlinkSync(path.join(SAVE_DIR, f)); continue; }
+      } else if (data.boardVersion !== BOARD_VERSION) { fs.unlinkSync(path.join(SAVE_DIR, f)); continue; }
       const room = { code: data.code, gameKind: data.gameKind || 'monopoly',
         theme: data.theme, mode: data.mode, pace: data.pace || 'standard',
         ver: data.ver || 0, players: data.players.map((p) => ({ ...p, id: null, connected: false })),
-        game: data.game };
+        game: data.game, garden: data.garden || null };
       if (room.game) { room.game.mini = null; room.game.auction = null; room.game.choice = null;
         room.game._lifeEv = null; room.game._forkEv = null;
         // 掷骰完等前进阶段可恢复（pending 已随 game 存档）；其余交互态回 await_roll
@@ -1372,7 +1383,63 @@ function loadSaves() {
 }
 
 /* =========================================================
- *  10. Socket 事件
+ *  10. 共享小花园（v4.0 · 沙盒 · 2.5D 等距）
+ *  双人在同一块 6×6 花园里种/浇/装饰；植物按真实时间生长（无需计时器）；
+ *  共享金币与爱心；爱心只靠双人动作涨（一起浇水/合种/送花/留言），
+ *  单人动作不涨，强制互动；断线重连复用同一套房间存档。
+ * ======================================================= */
+const GARDEN_SIZE = 6;
+const GARDEN_PLANT_COST = 5, GARDEN_DECOR_COST = 20, GARDEN_CHECKIN = 10;
+const GARDEN_WATER_BOOST = 60000, GARDEN_WATER_COOLDOWN = 20000, GARDEN_WATER_CAP = 360000;
+const GARDEN_STAGE_SEED = 120000, GARDEN_STAGE_SPROUT = 600000;
+const GARDEN_PLANTS = ['rose', 'tulip', 'sunflower', 'star'];
+const GARDEN_DECOR = ['bench', 'lamp', 'fountain', 'swing'];
+const PLANT_NAME = { rose: '玫瑰', tulip: '郁金香', sunflower: '向日葵', star: '星星花' };
+const DECOR_NAME = { bench: '长椅', lamp: '路灯', fountain: '喷泉', swing: '秋千' };
+const dayKey = () => { const d = new Date(); return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate(); };
+
+function makeGarden() {
+  return {
+    ver: GARDEN_VERSION, size: GARDEN_SIZE, coins: 60, love: 0,
+    startedAt: Date.now(), lastCoinDay: [0, 0], log: [],
+    plots: Array.from({ length: GARDEN_SIZE * GARDEN_SIZE }, () => ({ type: 'empty' })),
+    coTree: { done: false, need: 2, by: [false, false] }, messages: [], lastEvent: null,
+  };
+}
+function buildGarden(room) { room.garden = makeGarden(); pushLog(room, '🌷 你们的共享小花园已就绪，一起种点什么吧～'); }
+function gardenStage(plot, now) {
+  if (plot.type !== 'plant') return plot.type;
+  const eff = (now - plot.plantedAt) + (plot.growMs || 0);
+  if (eff < GARDEN_STAGE_SEED) return 'seed';
+  if (eff < GARDEN_STAGE_SPROUT) return 'sprout';
+  return 'flower';
+}
+function gardenPublicState(room, forId) {
+  const g = room.garden; const now = Date.now();
+  return {
+    code: room.code, gameKind: 'garden', ver: room.ver || 0,
+    boardVersion: BOARD_VERSION, gardenVersion: GARDEN_VERSION,
+    started: !!g, coins: g ? g.coins : 0, love: g ? g.love : 0, now,
+    plots: g ? g.plots.map((p) => ({
+      t: p.type, p: p.plant || null, d: p.decor || null, by: p.by != null ? p.by : null,
+      st: gardenStage(p, now), pa: p.plantedAt || 0, gm: p.growMs || 0,
+    })) : [],
+    coTree: g ? g.coTree : { done: false, need: 2, by: [false, false] },
+    messages: g ? g.messages.slice(-12) : [],
+    log: g ? (g.log || []).slice(0, 10) : [],
+    lastEvent: g ? g.lastEvent : null,
+    players: room.players.map((p) => ({ name: p.name, avatar: p.avatar, connected: p.connected, isYou: p.id === forId,
+      // 与 monopoly 一致：只给本人下发 token，供前端保存会话做断线重连
+      ...(p.id === forId ? { token: p.token } : {}) })),
+  };
+}
+function gardenBoard(room) {
+  return { boardVersion: BOARD_VERSION, gardenVersion: GARDEN_VERSION, gameKind: 'garden', size: GARDEN_SIZE, plants: GARDEN_PLANTS, decor: GARDEN_DECOR };
+}
+function gardenPlayerIdx(room, socketId) { return room.players.findIndex((p) => p.id === socketId); }
+
+/* =========================================================
+ *  11. Socket 事件
  * ======================================================= */
 io.on('connection', (socket) => {
   // v2.2 保留：断线自动重连按 token 重绑身份
@@ -1439,6 +1506,10 @@ io.on('connection', (socket) => {
     if (room.players.length < 2) return;
     if (room.game && room.game.phase === 'ended') room.game = null;
     if (room.game) return;
+    if (room.gameKind === 'garden') {        // v4.0：花园不用 mode/pace/theme，直接建花园
+      if (room.garden) return;
+      buildGarden(room); sendBoard(room); broadcast(room); return;
+    }
     if (mode && MODES[mode]) room.mode = mode;
     if (pace && PACES[pace]) room.pace = pace;
     if (theme && THEMES[theme]) room.theme = theme;
@@ -1449,7 +1520,7 @@ io.on('connection', (socket) => {
 
   socket.on('rollDice', () => {
     const room = findRoomBySocket(socket.id);
-    if (!room || !room.game) return socket.emit('needResync');
+    if (!room) return; if (room.gameKind === 'garden') return; if (!room.game) return socket.emit('needResync');
     const g = room.game;
     if (g.phase !== 'await_roll') return;
     const player = room.players[g.current];
@@ -1462,7 +1533,7 @@ io.on('connection', (socket) => {
   /* v3.2 前进：掷骰后由当前玩家确认，才生成移动序列并结算 */
   socket.on('confirmMove', (payload) => {
     const room = findRoomBySocket(socket.id);
-    if (!room || !room.game) return socket.emit('needResync');
+    if (!room) return; if (room.gameKind === 'garden') return; if (!room.game) return socket.emit('needResync');
     const g = room.game;
     if (g.phase !== 'await_move' || !g.pending) return;
     const player = room.players[g.pending.moverIdx];
@@ -1502,11 +1573,17 @@ io.on('connection', (socket) => {
     const other = room.players.find((x) => x !== p);
     const now = Date.now();
     room._interactAt = room._interactAt || {};
-    const last = room._interactAt[idx] || 0;
+    // v4.0：按「玩家 + 动作」各自计时，不同动作完全互不阻塞，连点不同互动即时生效。
+    // 防刷屏只靠每个动作自己的短 CD（同一种动作短时间内重复点才会被挡），
+    // 不再设全局节流 —— 那正是「连点几秒才成功一次」的根因。
+    const CD = { heart: 1000, poke: 350, gift: 450, money: 800, rps: 450 };
+    const cd = CD[kind] || 450;
+    const key = idx + ':' + kind;
+    const last = room._interactAt[key] || 0;
+    if (now - last < cd) return;
     const EMOJI = { heart: '💗', poke: '👉', gift: '🎁', money: '💰', rps: '✊' };
     let text = '', needStep = false, fxHeart = false;
     if (kind === 'money') {
-      if (now - last < 3000) return;
       const v = Math.max(10, Math.min(500, Math.round(Number(amount) || 50)));
       if (p.money < v) return socket.emit('errorMsg', '余额不够送啦～');
       p.money -= v; if (other) other.money += v;
@@ -1514,25 +1591,22 @@ io.on('connection', (socket) => {
       text = `${p.name} 给 ${other ? other.name : 'TA'} 送了 ${v} 零花钱 💰`;
       pushLog(room, text);
     } else if (kind === 'heart') {
-      if (now - last < 6000) return;
-      if (room.game && room.game.phase !== 'ended') { room.game.heart++; needStep = true; fxHeart = true; }
+      if (room.gameKind === 'garden' && room.garden) { room.garden.love = Math.min(999, room.garden.love + 1); needStep = true; fxHeart = true; }
+      else if (room.game && room.game.phase !== 'ended') { room.game.heart++; needStep = true; fxHeart = true; }
       text = `${p.name} 发来一颗爱心，默契 +1 💗`;
       pushLog(room, text);
     } else if (kind === 'rps') {
-      if (now - last < 3000) return;
       const r = ['对方赢啦，撒个娇吧～', '平局！再来一局？', '你赢啦，讨个小奖励 ✨'][Math.floor(Math.random() * 3)];
       text = `${p.name} 发起石头剪刀布：${r}`;
       pushLog(room, text);
     } else if (kind === 'gift') {
-      if (now - last < 4000) return;
       text = `${p.name} 送出一个小礼物 🎁「给你的小惊喜」`;
       pushLog(room, text);
     } else {
-      if (now - last < 2500) return;
       text = `${p.name} 戳了戳你 👉 在吗在吗～`;
       pushLog(room, text);
     }
-    room._interactAt[idx] = now;
+    room._interactAt[key] = now;
     io.to(room.code).emit('interactFx', { from: p.name, fromIdx: idx, kind, emoji: EMOJI[kind] || '💕', text });
     if (fxHeart) setFx(room, 'heart', text);
     if (needStep) step(room); else broadcast(room);
@@ -1540,7 +1614,7 @@ io.on('connection', (socket) => {
 
   socket.on('buyDecision', ({ buy }) => {
     const room = findRoomBySocket(socket.id);
-    if (!room || !room.game) return socket.emit('needResync');
+    if (!room) return; if (room.gameKind === 'garden') return; if (!room.game) return socket.emit('needResync');
     const g = room.game;
     if (g.phase !== 'await_buy') return;
     if (room.players[g.current].id !== socket.id) return;
@@ -1557,7 +1631,7 @@ io.on('connection', (socket) => {
 
   socket.on('buildHouse', ({ tileIndex }) => {
     const room = findRoomBySocket(socket.id);
-    if (!room || !room.game) return socket.emit('needResync');
+    if (!room) return; if (room.gameKind === 'garden') return; if (!room.game) return socket.emit('needResync');
     const p = room.players.find((x) => x.id === socket.id);
     const r = F.extraRules ? buildHouse(room, p, tileIndex) : { ok: false, msg: '该玩法未开启' };
     if (r.ok) step(room); else socket.emit('errorMsg', r.msg);
@@ -1565,7 +1639,7 @@ io.on('connection', (socket) => {
 
   socket.on('mortgage', ({ tileIndex, redeem }) => {
     const room = findRoomBySocket(socket.id);
-    if (!room || !room.game) return socket.emit('needResync');
+    if (!room) return; if (room.gameKind === 'garden') return; if (!room.game) return socket.emit('needResync');
     const p = room.players.find((x) => x.id === socket.id);
     const r = F.extraRules ? mortgage(room, p, tileIndex, !!redeem) : { ok: false, msg: '该玩法未开启' };
     if (r.ok) step(room); else socket.emit('errorMsg', r.msg);
@@ -1573,13 +1647,13 @@ io.on('connection', (socket) => {
 
   socket.on('miniPick', ({ value }) => {
     const room = findRoomBySocket(socket.id);
-    if (!room || !room.game) return socket.emit('needResync');
+    if (!room) return; if (room.gameKind === 'garden') return; if (!room.game) return socket.emit('needResync');
     miniPick(room, socket.id, value);
   });
 
   socket.on('choicePick', ({ value }) => {
     const room = findRoomBySocket(socket.id);
-    if (!room || !room.game) return socket.emit('needResync');
+    if (!room) return; if (room.gameKind === 'garden') return; if (!room.game) return socket.emit('needResync');
     const g = room.game;
     if (g.phase !== 'await_choice' || !g.choice) return;
     const p = room.players[g.choice.byIdx];
@@ -1589,7 +1663,7 @@ io.on('connection', (socket) => {
 
   socket.on('jailAction', ({ pay }) => {
     const room = findRoomBySocket(socket.id);
-    if (!room || !room.game) return socket.emit('needResync');
+    if (!room) return; if (room.gameKind === 'garden') return; if (!room.game) return socket.emit('needResync');
     const g = room.game;
     if (g.phase !== 'await_roll') return;
     const player = room.players[g.current];
@@ -1612,8 +1686,102 @@ io.on('connection', (socket) => {
 
   socket.on('restart', () => {
     const room = findRoomBySocket(socket.id);
+    if (room && room.gameKind === 'garden') return;  // v4.0：花园用 gardenAction.reset，不在此清存档
     if (!room) return socket.emit('needResync');
     room.game = null; deleteSave(room.code); broadcast(room);
+  });
+
+  /* v4.0 共享小花园：所有花园动作走一个事件，按 action 分派；改动后 step() 广播花园状态 */
+  socket.on('gardenAction', ({ action, idx, value } = {}) => {
+    const room = findRoomBySocket(socket.id);
+    if (!room || room.gameKind !== 'garden' || !room.garden) return socket.emit('needResync');
+    const g = room.garden;
+    const pIdx = gardenPlayerIdx(room, socket.id);
+    if (pIdx < 0) return;
+    let changed = false, fxIdx = -1, fxKind = null;
+
+    if (action === 'plant' || action === 'decor') {
+      const i = idx | 0;
+      if (i < 0 || i >= g.plots.length) return;
+      const plot = g.plots[i];
+      if (plot.type !== 'empty') return socket.emit('errorMsg', '这块地已经有东西啦');
+      if (action === 'plant') {
+        const plant = GARDEN_PLANTS.includes(value) ? value : 'rose';
+        if (g.coins < GARDEN_PLANT_COST) return socket.emit('errorMsg', '金币不够，先去「签到」领一下～');
+        g.coins -= GARDEN_PLANT_COST;
+        g.plots[i] = { type: 'plant', plant, plantedAt: Date.now(), growMs: 0, water: [0, 0], by: pIdx };
+        pushLog(room, `🌱 ${room.players[pIdx].name} 种下了一株${PLANT_NAME[plant]}`);
+      } else {
+        const decor = GARDEN_DECOR.includes(value) ? value : 'bench';
+        if (g.coins < GARDEN_DECOR_COST) return socket.emit('errorMsg', '金币不够装饰，先去「签到」领一下～');
+        g.coins -= GARDEN_DECOR_COST;
+        g.plots[i] = { type: 'decor', decor, by: pIdx };
+        pushLog(room, `🪑 ${room.players[pIdx].name} 摆了一个${DECOR_NAME[decor]}`);
+      }
+      changed = true; fxIdx = i; fxKind = action;
+    } else if (action === 'water') {
+      const i = idx | 0;
+      if (i < 0 || i >= g.plots.length) return;
+      const plot = g.plots[i];
+      if (plot.type !== 'plant') return socket.emit('errorMsg', '这里没有要浇水的植物');
+      const tnow = Date.now();
+      const last = plot.water ? (plot.water[pIdx] || 0) : 0;
+      if (tnow - last < GARDEN_WATER_COOLDOWN) return socket.emit('errorMsg', '刚浇过，歇会儿再来～');
+      plot.water = plot.water || [0, 0]; plot.water[pIdx] = tnow;
+      plot.growMs = Math.min(GARDEN_WATER_CAP, (plot.growMs || 0) + GARDEN_WATER_BOOST);
+      const other = pIdx === 0 ? 1 : 0;     // 一起浇水：对方 5 分钟内也浇过同一株 → 爱心 +1（每株仅一次）
+      if (plot.water[other] && tnow - plot.water[other] < 300000 && !plot.wateredTogether) {
+        plot.wateredTogether = true; g.love = Math.min(999, g.love + 1);
+        pushLog(room, `💗 两人一起给这株植物浇水，默契 +1`);
+      }
+      pushLog(room, `💧 ${room.players[pIdx].name} 给植物浇了浇水`);
+      changed = true; fxIdx = i; fxKind = 'water';
+    } else if (action === 'cotree') {
+      if (g.coTree.done) return socket.emit('errorMsg', '合种树已经长大啦');
+      if (g.coTree.by[pIdx]) return socket.emit('errorMsg', '你已经贡献过啦，等 TA 也来～');
+      g.coTree.by[pIdx] = true;
+      if (g.coTree.by[0] && g.coTree.by[1]) {
+        g.coTree.done = true; g.love = Math.min(999, g.love + 3); g.coins += GARDEN_CHECKIN;
+        pushLog(room, `🌳 两人一起种的大树长成啦！默契 +3、金币 +${GARDEN_CHECKIN}`);
+      } else {
+        pushLog(room, `🌱 ${room.players[pIdx].name} 来给合种树添了一铲土，等 TA 也来～`);
+      }
+      changed = true; fxKind = 'cotree';
+    } else if (action === 'checkin') {
+      const day = dayKey();
+      if (g.lastCoinDay[pIdx] === day) return socket.emit('errorMsg', '今天已经签到过啦');
+      g.lastCoinDay[pIdx] = day; g.coins += GARDEN_CHECKIN;
+      pushLog(room, `📅 ${room.players[pIdx].name} 签到 +${GARDEN_CHECKIN} 金币`);
+      changed = true;
+    } else if (action === 'gift') {
+      const empties = g.plots.map((p, i) => (p.type === 'empty' ? i : -1)).filter((i) => i >= 0);
+      const plant = GARDEN_PLANTS[Math.floor(Math.random() * GARDEN_PLANTS.length)];
+      let where = '';
+      if (empties.length) {
+        const t = empties[Math.floor(Math.random() * empties.length)];
+        g.plots[t] = { type: 'plant', plant, plantedAt: Date.now(), growMs: 0, water: [0, 0], by: pIdx };
+        where = '（悄悄种进了花园）';
+      }
+      g.love = Math.min(999, g.love + 1);
+      pushLog(room, `💐 ${room.players[pIdx].name} 送给 TA 一朵${PLANT_NAME[plant]}${where}，默契 +1`);
+      changed = true; fxKind = 'gift';
+    } else if (action === 'message') {
+      const text = String(value || '').trim().slice(0, 40); if (!text) return;
+      g.messages.push({ from: pIdx, name: room.players[pIdx].name, text, ts: Date.now() });
+      if (g.messages.length > 50) g.messages.shift();
+      g.love = Math.min(999, g.love + 1);
+      pushLog(room, `💌 ${room.players[pIdx].name} 在长椅上留了言：${text}`);
+      changed = true; fxKind = 'message';
+    } else if (action === 'reset') {
+      room.garden = makeGarden();
+      pushLog(room, '🌷 花园已焕然一新（重置）');
+      changed = true;
+    } else return;
+
+    if (changed) {
+      if (fxKind) io.to(room.code).emit('gardenFx', { idx: fxIdx, fromIdx: pIdx, kind: fxKind, name: room.players[pIdx].name });
+      step(room);
+    }
   });
 
   /* v3.1 主动退出：两人房一人离开即解散，明确广播给对方，避免对方卡在原地 */
@@ -1633,7 +1801,7 @@ io.on('connection', (socket) => {
   /* v3.1 重开本局：清掉对局但保留房间与两人，双方一起回等待页重新配置 */
   socket.on('endSession', () => {
     const room = findRoomBySocket(socket.id);
-    if (!room || !room.game) return socket.emit('needResync');
+    if (!room) return; if (room.gameKind === 'garden') return; if (!room.game) return socket.emit('needResync');
     const p = room.players.find((x) => x.id === socket.id);
     ['_auctionTimer', '_miniTimer', '_choiceTimer'].forEach((k) => clearTimeout(room[k]));
     room.game = null; deleteSave(room.code);
@@ -1695,4 +1863,4 @@ server.on('error', (e) => {
   if (e.code === 'EADDRINUSE') console.error(`⚠️ 端口 ${PORT} 已被占用（可能已有实例在运行），本实例退出。`);
   else console.error('服务器错误:', e);
 });
-server.listen(PORT, () => console.log(`💕 双人游戏合集 v3.3 已启动: http://localhost:${PORT}`));
+server.listen(PORT, () => console.log(`💕 两个人的游戏屋 v4.0 已启动: http://localhost:${PORT}`));

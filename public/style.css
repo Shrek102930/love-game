@@ -419,14 +419,16 @@ h2{font-size:18px;margin:0 0 8px}
 
 /* ==================== v3.2 互动飘动画 ==================== */
 .interact-fx-layer{position:fixed;inset:0;pointer-events:none;z-index:88;overflow:hidden}
-.i-fx{position:absolute;top:-40px;animation:iFloat 2.4s ease-in forwards}
+.i-fx{position:absolute;top:-40px;line-height:0;animation:iFloat 2.4s ease-in forwards}
+.i-fx svg{display:block;filter:drop-shadow(0 2px 3px rgba(0,0,0,.15))}
 @keyframes iFloat{0%{transform:translateY(0) rotate(0);opacity:0}
   15%{opacity:1}100%{transform:translateY(105vh) rotate(320deg) scale(1.3);opacity:0}}
 .i-fx-big{position:absolute;top:38%;left:50%;transform:translate(-50%,-50%);
   background:rgba(255,255,255,.96);border:2px solid #ffc2d6;border-radius:20px;
   padding:14px 22px;box-shadow:0 10px 34px rgba(220,90,140,.3);text-align:center;
   display:flex;flex-direction:column;align-items:center;gap:2px;animation:iPop 2.2s ease-out forwards}
-.i-fx-big .ifb-emoji{font-size:40px;animation:beat 1s infinite}
+.i-fx-big .ifb-emoji{display:block;line-height:0;animation:beat 1s infinite}
+.i-fx-big .ifb-emoji svg{display:inline-block}
 .i-fx-big b{font-size:14px;color:#c04a72}
 .i-fx-big small{font-size:11px;color:#8a7186}
 @keyframes iPop{0%{transform:translate(-50%,-50%) scale(.6);opacity:0}
@@ -523,4 +525,207 @@ h2{font-size:18px;margin:0 0 8px}
   .tile .ti{width:12px;height:12px;margin-top:2px}
   .tile .tn{font-size:6.5px}
   .inner-btn,.advance-btn.half{font-size:12.5px;padding:13px 2px}
+}
+
+/* ==================================================================
+ * v4.0 ① 外环小方格放大 + 长地名完整显示
+ * 40 格环形网格是 11×11 均分，棋子按 100/11 百分比定位 —— 不改轨道比例，
+ * 改为：缩小棋盘外框内边距/gap 真实放大格子；图标缩小移到角标，把整格让给名字；
+ * 名字按字数自适应字号 + 允许多行不裁切；点格子弹出完整地点名。
+ * ================================================================== */
+.board-frame{padding:5px}
+.board{gap:1px}
+.tile{overflow:visible;z-index:1;border-radius:6px;
+  box-shadow:0 1px 3px rgba(90,60,80,.1)}
+.tile.pulse,.tile:hover{z-index:6}
+/* 图标：缩成右上角小角标，不再占一整行，把格子空间全部让给地名 */
+.tile .ti{position:absolute;top:1px;right:1px;width:11px;height:11px;
+  margin:0;opacity:.92;flex:none}
+.tile .ti img{width:100%;height:100%;object-fit:contain}
+/* 地名：独占整格、可多行、按字数自适应，彻底不截断 */
+.tile .tn{width:100%;max-height:none;overflow:visible;
+  font-size:9px;line-height:1.04;margin-top:9px;flex:none;
+  word-break:break-all;padding:0 2px;
+  text-shadow:0 1px 0 #fff,0 0 3px #fff,0 0 3px #fff}
+.tile .tn.len3{font-size:8.2px}
+.tile .tn.len4{font-size:7.4px}
+.tile .tn.len5{font-size:6.8px}
+.tile .tn.len6{font-size:6.2px}
+.tile.corner .tn{margin-top:8px}
+.tile .tprice{position:absolute;bottom:1px;left:1px;font-size:6.5px;
+  background:rgba(255,255,255,.72);border-radius:3px;padding:0 1px;line-height:1.2}
+.tile .tlv{bottom:0;right:1px;font-size:6.5px;background:rgba(255,255,255,.7);border-radius:3px;padding:0 1px}
+.tile .tfork{position:absolute;top:1px;left:1px;font-size:8px;z-index:2}
+@media (max-width:360px){
+  .tile .tn{font-size:8px;margin-top:8px}
+  .tile .tn.len3{font-size:7.4px}
+  .tile .tn.len4{font-size:6.8px}
+  .tile .tn.len5{font-size:6.2px}
+  .tile .tn.len6{font-size:5.8px}
+  .tile .ti{width:9px;height:9px}
+}
+/* v4.0 放大棋盘工具条 */
+.board-tools{display:flex;justify-content:flex-end;margin:0 2px 6px}
+.zoom-toggle{background:#fff;color:var(--pink-d);border:1.5px solid #f6dce8;
+  font-size:11px;font-weight:800;padding:5px 12px;border-radius:20px;
+  box-shadow:0 2px 8px rgba(160,100,140,.1)}
+.zoom-toggle.on{background:var(--pink);color:#fff;border-color:var(--pink)}
+/* 放大态：棋盘等比放大到可滚动；所有格子/棋子/内环/连线均按百分比定位，零错位 */
+.board-frame.zoomed{overflow:auto;max-height:78vh;-webkit-overflow-scrolling:touch}
+.board-frame.zoomed .board{min-width:660px}
+.board-frame.zoomed .tile .tn{font-size:13px;line-height:1.1;margin-top:14px}
+.board-frame.zoomed .tile .tn.len3{font-size:12.5px}
+.board-frame.zoomed .tile .tn.len4{font-size:12px}
+.board-frame.zoomed .tile .tn.len5{font-size:11.5px}
+.board-frame.zoomed .tile .tn.len6{font-size:11px}
+.board-frame.zoomed .tile .ti{width:16px;height:16px;top:1px;right:1px}
+.board-frame.zoomed .tile .tprice,.board-frame.zoomed .tile .tlv{font-size:9px}
+.board-frame.zoomed .inner-tile .it-ico{width:26px;height:26px}
+.board-frame.zoomed .inner-tile .it-name{font-size:12px}
+.board-frame.zoomed .inner-tile .it-desc{font-size:10px}
+.board-frame.zoomed .board-center .center-title{font-size:18px}
+.board-frame.zoomed .board-center .center-sub{font-size:13px}
+
+/* 首页统称标题 */
+.brand h1{background:linear-gradient(120deg,#ff5e8a,#c04a72 55%,#8f7ae0);
+  -webkit-background-clip:text;background-clip:text;color:transparent;letter-spacing:.5px}
+.brand .sub{line-height:1.6}
+
+/* ==================================================================
+ * v4.0 ② 共享小花园（沙盒 · 2.5D 等距）
+ * ================================================================== */
+.garden-wrap{max-width:480px}
+.gd-hud{display:flex;gap:7px;align-items:center;margin-bottom:6px}
+.gd-stat{flex:0 0 auto;display:flex;align-items:center;gap:6px;background:#fff;
+  border:1px solid #f4e2ec;border-radius:12px;padding:6px 9px;
+  box-shadow:0 2px 8px rgba(160,100,140,.08)}
+.gd-stat-ico{width:22px;height:22px;display:flex;align-items:center;justify-content:center;line-height:0;flex:none}
+.gd-tip-ico{display:inline-flex;vertical-align:middle;line-height:0;margin-right:2px}
+.gd-tip-ico svg,.gd-stat-ico svg{display:block}
+.gd-stat b{display:block;font-size:15px;color:var(--pink-d);line-height:1.05}
+.gd-stat small{font-size:8.5px;color:var(--muted)}
+.gd-duo{flex:1;min-width:0;display:flex;justify-content:flex-end;gap:4px}
+.gd-duo img{width:30px;height:30px;border-radius:50%;border:2px solid #fff;
+  box-shadow:0 2px 6px rgba(0,0,0,.15);object-fit:cover;background:#ffeef4}
+.gd-duo img.off{filter:grayscale(1);opacity:.5}
+.gd-hud-tip{font-size:9.5px;color:#a07d94;text-align:left;margin:0 2px 8px;line-height:1.5}
+
+/* 合种树卡片 */
+.gd-cotree{display:flex;align-items:center;gap:8px;background:linear-gradient(135deg,#eafbe9,#f3fff0);
+  border:1.5px solid #cdeecb;border-radius:14px;padding:8px 10px;margin-bottom:8px;text-align:left}
+.gd-cotree .ct-ico{width:32px;height:32px;display:flex;align-items:center;justify-content:center;line-height:0;flex:none}
+.gd-cotree .ct-ico svg{display:block}
+.gd-cotree .ct-txt{flex:1;min-width:0}
+.gd-cotree .ct-txt b{font-size:11.5px;color:#3d7a44;display:block}
+.gd-cotree .ct-txt small{font-size:9px;color:#7aa87c}
+.gd-cotree .ct-dots{display:flex;gap:4px}
+.gd-cotree .ct-dots i{width:16px;height:16px;border-radius:50%;background:#fff;
+  border:1.5px solid #cfe8cd;display:flex;align-items:center;justify-content:center;font-style:normal;font-size:9px}
+.gd-cotree .ct-dots i.on{background:#7fc47a;border-color:#69b364;color:#fff}
+.gd-cotree.done{background:linear-gradient(135deg,#fff4d6,#fff9e8);border-color:#f0d99a}
+.gd-cotree.done .ct-txt b{color:#b07d1f}
+
+/* 2.5D 等距场景 */
+.gd-scene{position:relative;height:300px;border-radius:20px;overflow:hidden;
+  background:linear-gradient(180deg,#dff1ff 0%,#eafbe8 46%,#d6f0cf 100%);
+  border:1.5px solid #fff;box-shadow:inset 0 -14px 30px rgba(90,150,90,.12),0 8px 22px rgba(120,150,110,.18);
+  perspective:900px;margin-bottom:10px}
+/* 太阳：纯 CSS 圆形 + 光晕，云朵用白色圆角块，均不依赖 emoji 字体 */
+.gd-scene::before{content:'';position:absolute;top:12px;right:16px;width:22px;height:22px;border-radius:50%;
+  background:radial-gradient(circle at 40% 40%,#fff3b0,#ffd45e);
+  box-shadow:0 0 0 5px rgba(255,220,110,.32),0 0 20px 8px rgba(255,214,100,.45)}
+.gd-scene::after{content:'';position:absolute;top:16px;left:20px;width:42px;height:13px;border-radius:12px;
+  background:rgba(255,255,255,.85);
+  box-shadow:26px 6px 0 -2px rgba(255,255,255,.72),-8px 4px 0 -4px rgba(255,255,255,.8),0 0 12px rgba(255,255,255,.5)}
+.gd-ground{position:absolute;left:50%;top:52%;width:78%;height:78%;
+  transform:translate(-50%,-50%) rotateX(56deg) rotateZ(45deg);
+  transform-style:preserve-3d;background:linear-gradient(135deg,#bfe6a8,#a5d68e);
+  border:6px solid #eaf7dd;border-radius:14px;
+  box-shadow:0 0 0 2px #8fc478,14px 14px 0 rgba(90,130,80,.22),0 20px 40px rgba(70,110,70,.25)}
+.gd-grid{position:absolute;left:50%;top:52%;width:78%;height:78%;
+  transform:translate(-50%,-50%) rotateX(56deg) rotateZ(45deg);
+  transform-style:preserve-3d;display:grid;
+  grid-template-columns:repeat(6,1fr);grid-template-rows:repeat(6,1fr);gap:2px}
+.gd-plot{position:relative;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.4);
+  border-radius:5px;cursor:pointer;transform-style:preserve-3d;transition:background .15s}
+.gd-plot:hover,.gd-plot.sel{background:rgba(255,255,255,.52);box-shadow:0 0 0 2px #fff,0 0 10px rgba(255,255,255,.8)}
+.gd-plot.empty::after{content:'＋';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  color:rgba(255,255,255,.55);font-size:14px;font-weight:800}
+.gd-plot.filled::after{display:none}
+/* 立牌：抵消父级等距旋转，让 SVG 正对观众并"立"在格子上 */
+.gd-sprite{position:absolute;left:50%;top:50%;width:34px;height:41px;pointer-events:none;
+  transform:translate(-50%,-50%) rotateZ(-45deg) rotateX(-56deg) translateY(-16px);
+  transform-origin:center bottom;line-height:0;
+  filter:drop-shadow(0 4px 3px rgba(60,90,60,.35));
+  animation:gdSway 3.2s ease-in-out infinite}
+.gd-sprite svg{width:100%;height:100%;display:block;overflow:visible}
+.gd-sprite.seed{width:26px;height:31px}
+.gd-sprite.sprout{width:30px;height:36px}
+.gd-sprite.decor{width:32px;height:38px}
+@keyframes gdSway{0%,100%{transform:translate(-50%,-50%) rotateZ(-45deg) rotateX(-56deg) translateY(-14px) rotate(-3deg)}
+  50%{transform:translate(-50%,-50%) rotateZ(-45deg) rotateX(-56deg) translateY(-16px) rotate(3deg)}}
+.gd-plot .gd-by{position:absolute;bottom:-1px;right:0;font-size:7px;
+  background:rgba(255,255,255,.85);border-radius:5px;padding:0 2px;pointer-events:none;
+  transform:rotateZ(-45deg) rotateX(-56deg)}
+/* Q 版双人：站在场景两侧，不参与 3D，避免变形 */
+.gd-couple{position:absolute;left:0;right:0;bottom:8px;height:56px;pointer-events:none}
+.gd-ch{position:absolute;bottom:2px;display:flex;flex-direction:column;align-items:center;gap:1px;
+  animation:chBob 2.2s ease-in-out infinite}
+.gd-ch.p0{left:9%}
+.gd-ch.p1{right:9%;animation-delay:.6s}
+.gd-ch img{width:34px;height:34px;border-radius:50%;border:2.5px solid #fff;
+  box-shadow:0 3px 8px rgba(0,0,0,.2);object-fit:cover;background:#ffeef4}
+.gd-ch.off img{filter:grayscale(1);opacity:.55}
+.gd-ch .ch-name{font-size:8.5px;font-weight:800;color:#4a6b46;background:rgba(255,255,255,.85);
+  border-radius:6px;padding:0 4px;white-space:nowrap}
+@keyframes chBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+
+/* 工具条 */
+.gd-toolbar{background:#fff;border:1.5px solid #f4e6ee;border-radius:14px;padding:8px 9px;margin-bottom:8px}
+.gd-tool-head{font-size:10.5px;font-weight:800;color:#a0698b;margin-bottom:6px;text-align:left}
+.gd-tools{display:flex;gap:6px;overflow-x:auto;padding-bottom:3px;scrollbar-width:thin}
+.gd-tool{flex:0 0 auto;min-width:52px;background:#faf5fb;border:1.5px solid transparent;border-radius:10px;
+  padding:5px 4px;display:flex;flex-direction:column;align-items:center;gap:1px;cursor:pointer}
+.gd-tool i{font-style:normal;width:26px;height:31px;display:block;line-height:0}
+.gd-tool i svg{width:100%;height:100%;display:block;overflow:visible}
+.gd-tool span{font-size:8.5px;color:#7a6b82;font-weight:700;white-space:nowrap}
+.gd-tool em{font-style:normal;font-size:7.5px;color:#c79a3e}
+.gd-tool.active{background:#fff2f7;border-color:var(--pink);box-shadow:0 2px 8px rgba(255,94,126,.2)}
+.gd-tool.active span{color:var(--pink-d)}
+.gd-tool.water{background:#eef7ff}
+.gd-tool.water.active{background:#e3f1ff;border-color:#6aa9e8}
+/* 花园互动条：图标用 SVG */
+.gd-interact .ib-btns button i{display:flex;align-items:center;justify-content:center;
+  width:24px;height:24px;line-height:0;font-style:normal;font-size:0}
+.gd-interact .ib-btns button i svg{display:block}
+.gd-interact .ib-head .gd-tip-ico svg{width:15px;height:15px}
+
+/* 常驻动作 */
+.gd-actions{display:flex;gap:6px;margin-bottom:8px}
+.gd-actions button{flex:1;background:linear-gradient(135deg,#fff,#fff5fa);border:1.5px solid #f6dce8;
+  border-radius:12px;padding:8px 2px;display:flex;flex-direction:column;align-items:center;gap:2px;
+  box-shadow:0 2px 8px rgba(160,100,140,.08)}
+.gd-actions button i{display:block;width:22px;height:22px;line-height:0;font-style:normal}
+.gd-actions button i svg{display:block}
+.gd-actions button span{font-size:9px;color:#8a7186;font-weight:700}
+.gd-actions button:active{transform:scale(.93)}
+.gd-actions button.warn{background:#fff8ee;border-color:#f4dcae}
+.gd-msg-row{display:flex;gap:6px;margin-bottom:8px}
+.gd-msg-row input{flex:1;padding:9px 10px;font-size:13px;border:1.5px solid #f4e6ee;border-radius:10px;outline:none}
+.gd-msg-row button{background:var(--pink);color:#fff;font-size:13px;padding:9px 14px;flex:0 0 auto}
+.gd-messages{max-height:150px;overflow-y:auto;text-align:left;padding:4px 2px}
+.gd-msg{background:#fff6fa;border:1px solid #f9e2ec;border-radius:10px;padding:7px 9px;margin-bottom:6px;
+  font-size:11.5px;color:#6b5a68;line-height:1.5;word-break:break-all}
+.gd-msg b{color:var(--pink-d);font-size:10.5px}
+.gd-msg time{display:block;font-size:8.5px;color:#c0aebc;margin-top:2px}
+.gd-empty{font-size:11px;color:#b3a2b0;text-align:center;padding:12px}
+
+@media (max-width:360px){
+  .gd-scene{height:262px}
+  .gd-sprite{font-size:21px}
+  .gd-sprite.seed{font-size:13px}
+  .gd-sprite.sprout{font-size:17px}
+  .gd-tool{min-width:46px}
+  .gd-actions button{font-size:16px}
+  .gd-actions button span{font-size:8px}
 }

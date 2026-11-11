@@ -82,50 +82,73 @@ function beep(type) {
     });
   } catch (e) {}
 }
-$('soundBtn') && $('soundBtn').addEventListener('click', () => {
-  soundOn = !soundOn; $('soundBtn').textContent = soundOn ? '🔊' : '🔇';
+function toggleSound() {
+  soundOn = !soundOn;
+  ['soundBtn', 'gdSoundBtn'].forEach((id) => { const e = $(id); if (e) e.textContent = soundOn ? '🔊' : '🔇'; });
+  const sv = $('setSoundVal'); if (sv) sv.textContent = soundOn ? '开' : '关';
   if (soundOn) beep('click');
-});
+}
+$('soundBtn') && $('soundBtn').addEventListener('click', toggleSound);
+$('gdSoundBtn') && $('gdSoundBtn').addEventListener('click', toggleSound);
 
 /* ---------- v3.1 顶栏：悄悄话 / 设置 / 退出主菜单 ---------- */
 function clearUnread() {
   unreadChat = 0;
-  const b = $('chatBadge'), u = $('chatUnread');
-  if (b) { b.classList.add('hidden'); b.textContent = '0'; }
-  if (u) { u.classList.add('hidden'); u.textContent = '0'; }
+  ['chatBadge', 'gdChatBadge', 'chatUnread', 'gdChatUnread'].forEach((id) => {
+    const e = $(id); if (e) { e.classList.add('hidden'); e.textContent = '0'; }
+  });
 }
 function openChat() {
-  const p = $('chatPanel'); if (!p) return;
+  const isG = st && st.gameKind === 'garden';
+  const p = isG ? $('gdChatPanel') : $('chatPanel'); if (!p) return;
   p.open = true; clearUnread();
   p.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 $('chatBtn') && $('chatBtn').addEventListener('click', () => { beep('click'); openChat(); });
-$('chatPanel') && $('chatPanel').addEventListener('toggle', () => { if ($('chatPanel').open) clearUnread(); });
+$('gdChatBtn') && $('gdChatBtn').addEventListener('click', () => { beep('click'); openChat(); });
+['chatPanel', 'gdChatPanel'].forEach((id) => {
+  const e = $(id); if (e) e.addEventListener('toggle', () => { if (e.open) clearUnread(); });
+});
 
+let _monoHelp = null;
 function openSettings() {
   $('setRoomInfo').textContent = '房间 ' + ((st && st.code) || S.code || '------');
   $('setSoundVal').textContent = soundOn ? '开' : '关';
+  const isG = st && st.gameKind === 'garden';
+  // 花园房：玩法速览换成花园说明、重开按钮改成「重置花园」
+  const help = document.querySelector('.set-help');
+  if (help) {
+    if (_monoHelp === null) _monoHelp = help.innerHTML;
+    help.innerHTML = isG
+      ? '<b>花园玩法速览</b><br>选个道具点空地种花/摆装饰 · 点有苗的地浇水<br>两人一起浇水、合种树、送花、留言才会涨爱心 💗<br>🌰 种子会按真实时间发芽、开花，常回来看看～'
+      : _monoHelp;
+  }
+  const rr = $('setRestart');
+  if (rr) {
+    rr.firstChild.textContent = isG ? '🔄 重置花园 ' : '🔄 重开本局 ';
+    const sp = rr.querySelector('span'); if (sp) sp.textContent = isG ? '清空花园重新开始' : '双方回到等待页';
+  }
   $('settings').classList.remove('hidden');
 }
 function closeSettings() { $('settings').classList.add('hidden'); }
 function doLeave() {
   socket.emit('leaveRoom');
   clearSession(); st = null; board = null; boardBuilt = false; clearUnread();
+  resetZoom(); resetGardenUI();
   $('over').classList.add('hidden'); $('settings').classList.add('hidden');
   show('lobby');
 }
 $('settingsBtn') && $('settingsBtn').addEventListener('click', () => { beep('click'); openSettings(); });
 $('setClose') && $('setClose').addEventListener('click', closeSettings);
 $('settings') && $('settings').addEventListener('click', (e) => { if (e.target.id === 'settings') closeSettings(); });
-$('setSound') && $('setSound').addEventListener('click', () => {
-  soundOn = !soundOn;
-  $('soundBtn').textContent = soundOn ? '🔊' : '🔇';
-  $('setSoundVal').textContent = soundOn ? '开' : '关';
-  if (soundOn) beep('click');
-});
+$('setSound') && $('setSound').addEventListener('click', toggleSound);
 $('setRestart') && $('setRestart').addEventListener('click', () => {
-  if (!window.confirm('重开本局？当前进度会清空，双方一起回到等待页重新选择模式。')) return;
-  closeSettings(); socket.emit('endSession');
+  const isG = st && st.gameKind === 'garden';
+  if (!window.confirm(isG ? '重置花园？所有植物、装饰和留言会清空，重新开始。'
+                          : '重开本局？当前进度会清空，双方一起回到等待页重新选择模式。')) return;
+  closeSettings();
+  if (isG) socket.emit('gardenAction', { action: 'reset' });
+  else socket.emit('endSession');
 });
 $('setExit') && $('setExit').addEventListener('click', () => {
   if (!window.confirm('退出房间？会解散当前房间，对方也会回到大厅。')) return;
@@ -138,7 +161,7 @@ $('exitBtn') && $('exitBtn').addEventListener('click', () => {
 
 /* ---------- 屏幕切换 ---------- */
 function show(which) {
-  ['lobby', 'waiting', 'game'].forEach((x) => $(x).classList.toggle('hidden', x !== which));
+  ['lobby', 'waiting', 'game', 'garden'].forEach((x) => $(x).classList.toggle('hidden', x !== which));
   window.scrollTo(0, 0);
 }
 function showOverlay(title, desc, btns) {
@@ -167,13 +190,20 @@ function bindGroup(groupId, key, cls) {
   const key = id.includes('Theme') ? 'theme' : id.includes('Mode') ? 'mode' : 'pace';
   bindGroup(id, key);
 });
-// 游戏合集：目前只有 monopoly 可玩，其余为 coming soon 占位
+// v4.0 游戏合集：情侣大富翁 + 共享小花园 两款可玩，其余 coming soon 占位
 const gkBtns = $('gameKindBtns');
+function syncGameKindUI() {
+  const isG = sel.gameKind === 'garden';
+  const opts = $('monopolyOpts'); if (opts) opts.classList.toggle('hidden', isG);
+  const cbtn = $('createBtn'); if (cbtn) cbtn.textContent = isG ? '🌷 创建小花园' : '✨ 创建房间';
+}
 if (gkBtns) gkBtns.addEventListener('click', (e) => {
   const b = e.target.closest('.game-card:not(.soon)'); if (!b) return;
   gkBtns.querySelectorAll('.game-card').forEach((x) => x.classList.remove('active'));
   b.classList.add('active'); sel.gameKind = b.dataset.v || 'monopoly'; beep('click');
+  syncGameKindUI();
 });
+syncGameKindUI();
 function syncWaitBtns() {
   [['wThemeBtns', 'theme'], ['wModeBtns', 'mode'], ['wPaceBtns', 'pace']].forEach(([id, k]) => {
     const g = $(id); if (!g) return;
@@ -200,9 +230,9 @@ $('copyCode').onclick = () => {
   $('copyCode').textContent = '✅ 已复制 ' + t; setTimeout(() => $('copyCode').textContent = '📋 复制房间号', 1600);
 };
 $('startBtn').onclick = () => { beep('click'); socket.emit('startGame', { ...sel }); };
-$('backBtn').onclick = () => { if (S.code) socket.emit('leaveRoom'); clearSession(); st = null; board = null; boardBuilt = false; clearUnread(); show('lobby'); };
+$('backBtn').onclick = () => { if (S.code) socket.emit('leaveRoom'); clearSession(); st = null; board = null; boardBuilt = false; clearUnread(); resetGardenUI(); show('lobby'); };
 $('againBtn').onclick = () => { beep('click'); $('over').classList.add('hidden'); socket.emit('restart'); };
-$('homeBtn').onclick = () => { if (S.code) socket.emit('leaveRoom'); clearSession(); st = null; board = null; boardBuilt = false; clearUnread(); $('over').classList.add('hidden'); show('lobby'); };
+$('homeBtn').onclick = () => { if (S.code) socket.emit('leaveRoom'); clearSession(); st = null; board = null; boardBuilt = false; clearUnread(); resetGardenUI(); $('over').classList.add('hidden'); show('lobby'); };
 $('chatSend').onclick = () => {
   const v = ($('chatInput').value || '').trim(); if (!v) return;
   socket.emit('chat', { text: v }); $('chatInput').value = '';
@@ -222,17 +252,32 @@ socket.on('avatarImage', ({ idx, data }) => {
   tryRender();
 });
 socket.on('interactFx', (d) => {
-  showInteractFx(d); toast((d.emoji || '💕') + ' ' + (d.text || ''));
+  showInteractFx(d); toast(d.text || '互动一下');
   beep(d.kind === 'heart' ? 'heart' : 'coin');
 });
 socket.on('state', (s) => {
-  st = s;
+  st = s; st._recvAt = Date.now();   // v4.0： gardens 本地按真实时间重算植物阶段
   if (s.players) { const me = s.players.find((p) => p.isYou); if (me && me.token && !S.token) { S.token = me.token; S.code = s.code; saveSession(); } }
   tryRender();
+});
+/* v4.0 花园动作特效：飘个 emoji + 音效，state 随后到达负责重绘 */
+socket.on('gardenFx', (d) => {
+  if (!d || st.gameKind !== 'garden') return;
+  const layer = $('interactFxLayer');
+  if (layer) {
+    for (let i = 0; i < 4; i++) {
+      const s = el('div', 'i-fx', gdFxSvg(d.kind, 22 + Math.round(Math.random() * 12)));
+      s.style.left = (20 + Math.random() * 60) + 'vw';
+      s.style.animationDelay = (Math.random() * 0.4) + 's';
+      layer.appendChild(s); setTimeout(() => s.remove(), 2600);
+    }
+  }
+  beep(d.kind === 'water' ? 'coin' : 'heart');
 });
 socket.on('needResync', () => { setNet('🔄 正在重新同步…', true); socket.emit('requestSync'); setTimeout(() => setNet(''), 2500); });
 socket.on('roomClosed', ({ by }) => {
   clearSession(); st = null; board = null; boardBuilt = false; clearUnread();
+  resetGardenUI();
   $('over').classList.add('hidden'); $('settings').classList.add('hidden');
   show('lobby');
   showOverlay('对方已离开房间', (by || '对方') + ' 退出了，房间已解散，可以开一局新的～', [
@@ -242,16 +287,23 @@ socket.on('roomClosed', ({ by }) => {
 });
 socket.on('sessionEnded', ({ by }) => { toast('🔄 ' + (by || '对方') + ' 结束了本局，回到等待页'); beep('click'); });
 socket.on('chat', ({ name, text, color }) => {
-  const c = $('chatList'); if (!c) return;
-  const d = el('div', 'chat-msg'); d.innerHTML = `<b style="color:${color}">${escapeHtml(name)}</b>：${escapeHtml(text)}`;
-  c.appendChild(d); c.scrollTop = c.scrollHeight;
-  // 折叠时也能看到：未读角标 + 弹窗式气泡
-  const panel = $('chatPanel');
+  // v4.0：同一条消息写入两个视图各自的聊天框（大富翁 / 花园）
+  ['chatList', 'gdChatList'].forEach((id) => {
+    const c = $(id); if (!c) return;
+    const d = el('div', 'chat-msg'); d.innerHTML = `<b style="color:${color}">${escapeHtml(name)}</b>：${escapeHtml(text)}`;
+    c.appendChild(d); c.scrollTop = c.scrollHeight;
+  });
+  // 折叠时也能看到：未读角标 + 弹窗式气泡（按当前所在游戏挑对应面板）
+  const isG = st && st.gameKind === 'garden';
+  const panel = isG ? $('gdChatPanel') : $('chatPanel');
   if (!panel || !panel.open) {
     unreadChat++;
-    const b = $('chatBadge'), u = $('chatUnread');
-    if (b) { b.textContent = String(Math.min(99, unreadChat)); b.classList.remove('hidden'); }
-    if (u) { u.textContent = String(unreadChat); u.classList.remove('hidden'); }
+    [isG ? 'gdChatBadge' : 'chatBadge'].forEach((id) => {
+      const b = $(id); if (b) { b.textContent = String(Math.min(99, unreadChat)); b.classList.remove('hidden'); }
+    });
+    [isG ? 'gdChatUnread' : 'chatUnread'].forEach((id) => {
+      const u = $(id); if (u) { u.textContent = String(unreadChat); u.classList.remove('hidden'); }
+    });
   }
   chatToast(name, text, color);
   beep('coin');
@@ -352,31 +404,35 @@ function compressImage(file, size, cb) {
   reader.readAsDataURL(file);
 }
 
-/* ========== v3.2 双人互动飘动画 ========== */
+/* ========== v3.2 双人互动飘动画（v4.0 图标改用 SVG，不依赖 emoji 字体） ========== */
 function showInteractFx(d) {
   const layer = $('interactFxLayer'); if (!layer) return;
   for (let i = 0; i < 8; i++) {
-    const s = el('div', 'i-fx', d.emoji || '💕');
+    const s = el('div', 'i-fx', gdFxSvg(d.kind, 20 + Math.round(Math.random() * 16)));
     s.style.left = (8 + Math.random() * 84) + 'vw';
-    s.style.fontSize = (20 + Math.random() * 24) + 'px';
     s.style.animationDelay = (Math.random() * 0.5) + 's';
     layer.appendChild(s);
     setTimeout(() => s.remove(), 2600);
   }
   const big = el('div', 'i-fx-big',
-    `<span class="ifb-emoji">${d.emoji || '💕'}</span><b>${escapeHtml(d.from || 'TA')}</b><small>${escapeHtml(d.text || '')}</small>`);
+    `<span class="ifb-emoji">${gdFxSvg(d.kind, 30)}</span><b>${escapeHtml(d.from || 'TA')}</b><small>${escapeHtml(d.text || '')}</small>`);
   layer.appendChild(big);
   setTimeout(() => big.remove(), 2300);
 }
 
-/* ---------- 渲染总入口（DOM 复用） ---------- */
+/* ---------- 渲染总入口（DOM 复用）· v4.0 按 gameKind 分流 ---------- */
 function tryRender() {
   if (!st) return;
+  if (st.gameKind === 'garden') {         // v4.0 共享小花园：完全独立的视图与渲染
+    if (!st.started) { renderWaiting(); return; }
+    hideOverlay(); show('garden'); renderGarden(); return;
+  }
   if (!st.started) { renderWaiting(); return; }
   if (!board) return;                     // 等 board 到达
   if (board.boardVersion !== st.boardVersion) { socket.emit('requestSync'); return; }
   hideOverlay();
   show('game');
+  paintGdIcons($('game'));        // v4.0：互动条等图标用 SVG，避免 emoji 豆腐块
   if (!boardBuilt) buildBoard();
   renderTop();
   renderPlayers();
@@ -392,6 +448,7 @@ function tryRender() {
 
 function renderWaiting() {
   show('waiting');
+  const isG = st.gameKind === 'garden';
   $('roomCode').textContent = st.code || S.code || '------';
   const box = $('waitPlayers'); box.innerHTML = '';
   st.players.forEach((p) => {
@@ -399,10 +456,268 @@ function renderWaiting() {
     d.style.maxWidth = '190px'; box.appendChild(d);
   });
   const n = st.players.length, isHost = st.players[0] && st.players[0].isYou;
-  $('waitHint').textContent = n >= 2 ? '两人都到齐啦，房主点开始游戏～（2/2）' : '等待另一位玩家加入…（1/2）';
-  $('waitSetup').classList.toggle('hidden', !isHost);
-  $('startBtn').classList.toggle('hidden', !(isHost && n >= 2));
-  syncWaitBtns();
+  $('waitHint').textContent = n >= 2
+    ? (isG ? '两人都到齐啦，房主点「进入花园」一起布置～（2/2）' : '两人都到齐啦，房主点开始游戏～（2/2）')
+    : '等待另一位玩家加入…（1/2）';
+  // 花园房用不到主题/模式/节奏，隐藏设置；标题与按钮文案也切换
+  $('waitSetup').classList.toggle('hidden', !isHost || isG);
+  const sb = $('startBtn');
+  sb.textContent = isG ? '🌷 进入花园' : '🎮 开始游戏';
+  sb.classList.toggle('hidden', !(isHost && n >= 2));
+  if (!isG) syncWaitBtns();
+}
+
+/* ==================================================================
+ * v4.0 共享小花园（沙盒 · 2.5D 等距）前端
+ * 服务器权威：只发 gardenAction，按广播回来的 state 重绘。
+ * 植物按真实时间成长：本地用 plantedAt/growMs 定时重算阶段，无需轮询服务器。
+ * ================================================================== */
+/* 花园页 UI 图标（内联 SVG，避免手机 emoji 字体缺失显示豆腐块） */
+const GD_UI = {
+  coin: `<circle cx="12" cy="12" r="9.5" fill="#f7c948" stroke="#e0a92f" stroke-width="1.5"/><circle cx="12" cy="12" r="6.5" fill="none" stroke="#fff0b8" stroke-width="1.2"/><text x="12" y="16" font-size="11" font-weight="800" text-anchor="middle" fill="#a9701a">¥</text>`,
+  love: `<path d="M12 21 C2 14 2 6 7 5 C9.6 4.3 12 6.6 12 6.6 C12 6.6 14.4 4.3 17 5 C22 6 22 14 12 21 Z" fill="#ff6b8f"/>`,
+  basket: `<path d="M4 10 L20 10 L18 21 L6 21 Z" fill="#d9a066" stroke="#a9703a" stroke-width="1.4" stroke-linejoin="round"/><path d="M8 10 Q12 3 16 10" fill="none" stroke="#a9703a" stroke-width="1.6"/><path d="M9 13 L11 19 M12 13 L12 19 M15 13 L13 19" stroke="#a9703a" stroke-width="1" opacity=".7"/>`,
+  checkin: `<rect x="3" y="5" width="18" height="16" rx="2.5" fill="#fff" stroke="#e07a8f" stroke-width="1.8"/><rect x="3" y="5" width="18" height="5" rx="2.5" fill="#ff8fa8"/><rect x="7" y="2.5" width="2" height="5" rx="1" fill="#c04a72"/><rect x="15" y="2.5" width="2" height="5" rx="1" fill="#c04a72"/><path d="M7.5 15.5 L10 18 L16.5 12" fill="none" stroke="#4ec9a5" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>`,
+  bouquet: `<path d="M12 21 L12 12 M8 21 Q9 15 12 13 M16 21 Q15 15 12 13" stroke="#4faa63" stroke-width="1.6" fill="none"/><circle cx="8" cy="8" r="3" fill="#ff8fa8"/><circle cx="16" cy="8" r="3" fill="#ffd873"/><circle cx="12" cy="6" r="3.2" fill="#e8536f"/><circle cx="12" cy="10" r="2.4" fill="#a05ad8"/>`,
+  tree: `<rect x="10.5" y="14" width="3" height="8" rx="1" fill="#a9703a"/><circle cx="12" cy="10" r="7" fill="#6ccb7d"/><circle cx="8.5" cy="12" r="4.2" fill="#57bb6c"/><circle cx="15.5" cy="12" r="4.2" fill="#4faa63"/>`,
+  letter: `<rect x="2.5" y="6" width="19" height="13" rx="2.5" fill="#fff" stroke="#e07a8f" stroke-width="1.7"/><path d="M3 7.5 L12 14 L21 7.5" fill="none" stroke="#e07a8f" stroke-width="1.7"/><path d="M16 3 L19 3 L19 6" fill="none" stroke="#ff8fa8" stroke-width="1.4"/>`,
+  reset: `<path d="M19 12 A7 7 0 1 1 12 5 A7 7 0 0 1 18.5 8.5" fill="none" stroke="#c98a3e" stroke-width="2.2" stroke-linecap="round"/><path d="M18.5 4 L18.5 9 L13.5 9 Z" fill="#c98a3e"/>`,
+  heart: `<path d="M12 21 C2 14 2 6 7 5 C9.6 4.3 12 6.6 12 6.6 C12 6.6 14.4 4.3 17 5 C22 6 22 14 12 21 Z" fill="#ff6b8f"/>`,
+  poke: `<path d="M4 12 L14 12 M11 8 L15 12 L11 16" fill="none" stroke="#5b8ff9" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="19" cy="12" r="2.6" fill="#a98ae8"/>`,
+  gift: `<rect x="3.5" y="9" width="17" height="12" rx="1.8" fill="#ff8fa8"/><rect x="3" y="7" width="18" height="4" rx="1.5" fill="#e8536f"/><rect x="10.5" y="7" width="3" height="14" fill="#fff0b8"/><path d="M12 7 Q7 7 7 4.5 Q7 2.5 9.5 3.5 Q11 4 12 7 Z" fill="#ffd873"/><path d="M12 7 Q17 7 17 4.5 Q17 2.5 14.5 3.5 Q13 4 12 7 Z" fill="#ffd873"/>`,
+  rps: `<path d="M8 11 V6.5 a1.5 1.5 0 0 1 3 0 V10 M11 10 V5.5 a1.5 1.5 0 0 1 3 0 V10 M14 10 V7 a1.5 1.5 0 0 1 3 0 V13 c0 4 -2.6 7 -6.5 7 -3 0 -4.5 -1.6 -6 -4 L3 12.5 a1.6 1.6 0 0 1 2.6 -1.8 L8 13" fill="#ffd9a8" stroke="#d99a5a" stroke-width="1.2" stroke-linejoin="round"/>`,
+};
+function gdUiIcon(name, size) {
+  return `<svg viewBox="0 0 24 24" width="${size || 20}" height="${size || 20}" xmlns="http://www.w3.org/2000/svg" style="display:inline-block;vertical-align:middle">${GD_UI[name] || ''}</svg>`;
+}
+/* 互动/花园动作 → 飘动画用的 SVG 图标名 */
+const GD_FX_ICON = {
+  heart: 'heart', poke: 'poke', gift: 'gift', rps: 'rps', money: 'coin',
+  plant: 'bouquet', decor: 'basket', water: 'tree', cotree: 'tree',
+  checkin: 'checkin', message: 'letter', reset: 'reset',
+};
+function gdFxSvg(kind, size) { return gdUiIcon(GD_FX_ICON[kind] || 'heart', size || 24); }
+/* 把页面里所有 [data-ico] 占位填充为 SVG（含后续动态插入的节点） */
+function paintGdIcons(root) {
+  (root || document).querySelectorAll('[data-ico]:not([data-ico-done])').forEach((e) => {
+    e.innerHTML = gdUiIcon(e.dataset.ico, Number(e.dataset.icoSize) || 20);
+    e.setAttribute('data-ico-done', '1');
+  });
+}
+const GD_PLANT = {
+  rose: { n: '玫瑰', c: '#e8536f', c2: '#ff8fa8' }, tulip: { n: '郁金香', c: '#a05ad8', c2: '#d49af0' },
+  sunflower: { n: '向日葵', c: '#f2b53c', c2: '#ffd873' }, star: { n: '星星花', c: '#5b8ff9', c2: '#9dc0ff' },
+};
+const GD_DECOR = {
+  bench: { n: '长椅' }, lamp: { n: '路灯' }, fountain: { n: '喷泉' }, swing: { n: '秋千' },
+};
+/* v4.0 植物/装饰用内联 SVG 程序化绘制：不依赖 emoji 字体，任何手机都清晰一致。
+ * viewBox 0 0 40 48，茎从底部长出，底部对齐格子中心。 */
+function gdSvg(type, key, stage) {
+  const wrap = (inner) => `<svg viewBox="0 0 40 48" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">${inner}</svg>`;
+  if (type === 'decor') {
+    const M = {
+      bench: `<rect x="7" y="24" width="26" height="5" rx="2" fill="#b9763f"/><rect x="7" y="31" width="26" height="4" rx="2" fill="#cf8b52"/>
+              <rect x="9" y="36" width="3" height="8" rx="1" fill="#8a5530"/><rect x="28" y="36" width="3" height="8" rx="1" fill="#8a5530"/>
+              <rect x="6" y="17" width="28" height="6" rx="2" fill="#a9683a"/>`,
+      lamp: `<rect x="18" y="20" width="4" height="24" rx="1.5" fill="#6b7280"/>
+             <path d="M12 20 Q20 8 28 20 Z" fill="#ffe08a" stroke="#e0a92f" stroke-width="1.5"/>
+             <rect x="14" y="12" width="12" height="9" rx="2" fill="#fff3b8" stroke="#e0a92f" stroke-width="1.5"/>
+             <rect x="14" y="43" width="12" height="3" rx="1.5" fill="#6b7280"/>`,
+      fountain: `<ellipse cx="20" cy="40" rx="16" ry="5" fill="#7fb8e8"/>
+                 <path d="M6 38 Q20 30 34 38 L32 42 Q20 36 8 42 Z" fill="#a9d4f2"/>
+                 <path d="M20 14 Q14 26 20 34 Q26 26 20 14 Z" fill="#8fd0f7"/>
+                 <path d="M13 32 Q9 26 12 22" stroke="#bfe6ff" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+                 <path d="M27 32 Q31 26 28 22" stroke="#bfe6ff" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+                 <circle cx="20" cy="12" r="3" fill="#dff2ff"/>`,
+      swing: `<path d="M8 44 L14 12 L26 12 L32 44" stroke="#a06b3f" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+              <path d="M12 14 L28 14" stroke="#c08a56" stroke-width="2.5" stroke-linecap="round"/>
+              <line x1="17" y1="15" x2="17" y2="32" stroke="#8a5530" stroke-width="1.5"/>
+              <line x1="23" y1="15" x2="23" y2="32" stroke="#8a5530" stroke-width="1.5"/>
+              <rect x="14" y="31" width="12" height="3.5" rx="1.5" fill="#e07a8f"/>`,
+    };
+    return wrap(M[key] || M.bench);
+  }
+  // 植物三阶段
+  const soil = `<ellipse cx="20" cy="44" rx="11" ry="3.4" fill="#8a6a4a" opacity=".55"/>`;
+  if (stage === 'seed') {
+    return wrap(`${soil}<ellipse cx="20" cy="40" rx="8" ry="4.5" fill="#a97c52"/>
+                 <circle cx="20" cy="36" r="3.2" fill="#7a4b2a"/><circle cx="18.8" cy="35" r="1" fill="#c89a6a"/>`);
+  }
+  if (stage === 'sprout') {
+    return wrap(`${soil}<ellipse cx="20" cy="42" rx="8" ry="3.4" fill="#a97c52"/>
+                 <path d="M20 41 L20 27" stroke="#4faa63" stroke-width="2.6" stroke-linecap="round"/>
+                 <path d="M20 32 Q11 33 11 26 Q18 25 20 32 Z" fill="#6ccb7d"/>
+                 <path d="M20 30 Q29 31 29 24 Q22 23 20 30 Z" fill="#57bb6c"/>`);
+  }
+  const P = GD_PLANT[key] || GD_PLANT.rose;
+  // 茎 + 叶（所有花共用）
+  const stem = `<path d="M20 44 L20 22" stroke="#4faa63" stroke-width="2.8" stroke-linecap="round"/>
+                <path d="M20 36 Q12 37 12 30 Q18 29 20 36 Z" fill="#68c47c"/>
+                <path d="M20 32 Q28 33 28 26 Q22 25 20 32 Z" fill="#57bb6c"/>`;
+  let flower = '';
+  if (key === 'sunflower') {
+    let petals = '';
+    for (let i = 0; i < 10; i++) { const a = i * 36; petals += `<ellipse cx="20" cy="9" rx="3" ry="7" fill="${P.c}" transform="rotate(${a} 20 18)"/>`; }
+    flower = `${petals}<circle cx="20" cy="18" r="6.5" fill="#8a5a2b"/><circle cx="20" cy="18" r="5" fill="#a9713a"/>`;
+  } else if (key === 'tulip') {
+    flower = `<path d="M12 20 Q11 9 15 9 Q17 12 20 12 Q23 12 25 9 Q29 9 28 20 Q20 25 12 20 Z" fill="${P.c}"/>
+              <path d="M20 12 Q20 18 20 22" stroke="${P.c2}" stroke-width="1.6" fill="none"/>`;
+  } else if (key === 'star') {
+    flower = `<path d="M20 6 L23.4 14.2 L32 15 L25.6 21 L27.6 29.5 L20 25 L12.4 29.5 L14.4 21 L8 15 L16.6 14.2 Z" fill="${P.c}"/>
+              <circle cx="20" cy="18" r="3.2" fill="${P.c2}"/>`;
+  } else { // rose
+    let petals = '';
+    for (let i = 0; i < 6; i++) { const a = i * 60; petals += `<ellipse cx="20" cy="12" rx="4.2" ry="6.5" fill="${P.c}" opacity=".92" transform="rotate(${a} 20 18)"/>`; }
+    flower = `${petals}<circle cx="20" cy="18" r="5" fill="${P.c2}"/><circle cx="20" cy="18" r="2.4" fill="#fff0f4"/>`;
+  }
+  return wrap(`${soil}${stem}${flower}`);
+}
+const GD_SEED = 120000, GD_SPROUT = 600000;   // 与服务端 GARDEN_STAGE_* 保持一致
+let gdTool = { type: 'plant', value: 'rose' };// 当前手持道具
+let gdPlotEls = [], gdBuilt = false, gdToolsKey = '', gdTimer = null;
+
+function gdNow() {
+  return st && st.now ? st.now + (Date.now() - (st._recvAt || Date.now())) : Date.now();
+}
+function gdStage(plot) {
+  if (!plot || plot.t !== 'plant') return null;
+  const eff = (gdNow() - (plot.pa || 0)) + (plot.gm || 0);
+  return eff < GD_SEED ? 'seed' : eff < GD_SPROUT ? 'sprout' : 'flower';
+}
+function gdSprite(plot) {
+  if (!plot) return '';
+  if (plot.t === 'decor') return gdSvg('decor', plot.d || 'bench');
+  if (plot.t !== 'plant') return '';
+  return gdSvg('plant', plot.p || 'rose', gdStage(plot) || 'seed');
+}
+function renderGarden() {
+  const size = (board && board.gameKind === 'garden' && board.size) || 6;
+  const N = size * size;
+  $('gdCode').textContent = st.code || S.code || '------';
+  $('gdTurn').textContent = st.players.length >= 2 ? '你俩的小花园' : '等 TA 来～';
+  $('gdCoins').textContent = st.coins || 0;
+  $('gdLove').textContent = st.love || 0;
+  // HUD 双人头像
+  const duo = $('gdDuo'); duo.innerHTML = '';
+  st.players.forEach((p, i) => {
+    const im = el('img'); im.src = avatarSrc(p, i); im.title = p.name;
+    if (!p.connected) im.className = 'off';
+    duo.appendChild(im);
+  });
+  paintGdIcons($('garden'));      // 填充静态 UI 图标
+  renderCoTree();
+  buildGardenGrid(size, N);
+  (st.plots || []).forEach((p, i) => paintPlot(i, p));
+  renderCouple();
+  renderGdLog();
+  renderGdMessages();
+  renderGdTools();
+  // 真实时间成长：每 15s 本地重算阶段（不发请求、不依赖服务器推送）
+  if (!gdTimer) gdTimer = setInterval(() => {
+    if (st && st.gameKind === 'garden' && !document.hidden) (st.plots || []).forEach((p, i) => paintPlot(i, p));
+  }, 15000);
+}
+function buildGardenGrid(size, N) {
+  const grid = $('gdGrid');
+  if (!gdBuilt) {
+    grid.innerHTML = ''; gdPlotEls = [];
+    grid.style.gridTemplateColumns = `repeat(${size},1fr)`;
+    grid.style.gridTemplateRows = `repeat(${size},1fr)`;
+    for (let i = 0; i < N; i++) {
+      const d = el('div', 'gd-plot empty');
+      d.dataset.idx = String(i);
+      d.innerHTML = '<div class="gd-sprite"></div><div class="gd-by"></div>';
+      d.addEventListener('click', () => gdPlotClick(i));
+      grid.appendChild(d); gdPlotEls.push(d);
+    }
+    gdBuilt = true;
+  }
+}
+function paintPlot(i, plot) {
+  const d = gdPlotEls[i]; if (!d) return;
+  const filled = plot && plot.t !== 'empty';
+  d.classList.toggle('empty', !filled);
+  d.classList.toggle('filled', !!filled);
+  const sp = d.querySelector('.gd-sprite'), by = d.querySelector('.gd-by');
+  if (!filled) { sp.innerHTML = ''; sp.className = 'gd-sprite'; by.textContent = ''; return; }
+  const stage = plot.t === 'plant' ? gdStage(plot) : null;
+  sp.innerHTML = gdSprite(plot);
+  sp.className = 'gd-sprite' + (plot.t === 'decor' ? ' decor' : (stage && stage !== 'flower' ? ' ' + stage : ''));
+  by.textContent = plot.t === 'plant'
+    ? (stage === 'flower' ? (GD_PLANT[plot.p] ? GD_PLANT[plot.p].n : '') : stage === 'sprout' ? '发芽中' : '种子')
+    : (GD_DECOR[plot.d] ? GD_DECOR[plot.d].n : '');
+}
+function gdPlotClick(i) {
+  if (!st || st.gameKind !== 'garden') return;
+  const plot = (st.plots || [])[i];
+  if (plot && plot.t === 'plant') { socket.emit('gardenAction', { action: 'water', idx: i }); beep('coin'); return; }
+  if (plot && plot.t === 'decor') { toast('这是你俩摆的小装饰～ 💕'); return; }
+  socket.emit('gardenAction', { action: gdTool.type, idx: i, value: gdTool.value });
+  beep('click');
+}
+function renderGdTools() {
+  const box = $('gdTools'); if (!box) return;
+  const plants = (board && board.gameKind === 'garden' && board.plants) || Object.keys(GD_PLANT);
+  const decor = (board && board.gameKind === 'garden' && board.decor) || Object.keys(GD_DECOR);
+  const key = plants.join(',') + '|' + decor.join(',');
+  if (key === gdToolsKey && box.children.length) {
+    box.querySelectorAll('.gd-tool').forEach((b) => b.classList.toggle('active', b.dataset.t === gdTool.type && b.dataset.v === gdTool.value));
+    return;
+  }
+  gdToolsKey = key; box.innerHTML = '';
+  const add = (t, k, d, cost) => {
+    const icon = t === 'plant' ? gdSvg('plant', k, 'flower') : gdSvg('decor', k);
+    const b = el('button', 'gd-tool' + (gdTool.type === t && gdTool.value === k ? ' active' : ''),
+      `<i>${icon}</i><span>${d.n}</span><em>🪙${cost}</em>`);
+    b.dataset.t = t; b.dataset.v = k;
+    b.onclick = () => { gdTool = { type: t, value: k }; renderGdTools(); beep('click'); };
+    box.appendChild(b);
+  };
+  plants.forEach((k) => add('plant', k, GD_PLANT[k] || { n: k }, 5));
+  decor.forEach((k) => add('decor', k, GD_DECOR[k] || { n: k }, 20));
+}
+function renderCoTree() {
+  const c = $('gdCotree'); const ct = st.coTree || { done: false, by: [false, false] };
+  c.classList.toggle('done', !!ct.done);
+  const bigTree = `<svg viewBox="0 0 40 40" width="30" height="30" xmlns="http://www.w3.org/2000/svg">
+    <rect x="17.5" y="24" width="5" height="13" rx="2" fill="#a9703a"/>
+    <circle cx="20" cy="16" r="11" fill="#5fbf72"/><circle cx="12" cy="20" r="7" fill="#57bb6c"/>
+    <circle cx="28" cy="20" r="7" fill="#4faa63"/><circle cx="20" cy="10" r="6" fill="#6ccb7d"/>
+    <circle cx="15" cy="14" r="1.6" fill="#ff8fa8"/><circle cx="26" cy="15" r="1.6" fill="#ffd873"/><circle cx="20" cy="21" r="1.6" fill="#fff0b8"/></svg>`;
+  c.innerHTML = `<div class="ct-ico">${ct.done ? bigTree : gdUiIcon('tree', 26)}</div>
+    <div class="ct-txt"><b>${ct.done ? '你俩的大树长成啦！' : '一起合种一棵树'}</b>
+    <small>${ct.done ? '默契 +3、金币 +10 · 还可以继续布置花园' : '两个人都来添一铲土，小树就会长大'}</small></div>
+    <div class="ct-dots">${(ct.by || [false, false]).map((x) => `<i class="${x ? 'on' : ''}">${x ? '✓' : '·'}</i>`).join('')}</div>`;
+}
+function renderCouple() {
+  const box = $('gdCouple'); box.innerHTML = '';
+  (st.players || []).forEach((p, i) => {
+    box.appendChild(el('div', 'gd-ch p' + i + (p.connected ? '' : ' off'),
+      `<img src="${avatarSrc(p, i)}" alt=""><span class="ch-name">${escapeHtml(p.name)}</span>`));
+  });
+}
+function renderGdLog() {
+  const box = $('gdLog'); if (!box) return;
+  const lg = st.log || [];
+  box.innerHTML = lg.length ? lg.map((l) => `<div>· ${escapeHtml(l.msg || '')}</div>`).join('')
+    : '<div class="gd-empty">还没有动静，去种点什么吧～</div>';
+}
+function renderGdMessages() {
+  const box = $('gdMsgs'); if (!box) return;
+  const ms = st.messages || [];
+  const cnt = $('gdMsgCount'); if (cnt) cnt.textContent = ms.length ? '(' + ms.length + ')' : '';
+  box.innerHTML = ms.length ? ms.slice().reverse().map((m) => {
+    const d = new Date(m.ts);
+    const t = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    return `<div class="gd-msg"><b>${escapeHtml(m.name || 'TA')}</b>：${escapeHtml(m.text)}<time>${t}</time></div>`;
+  }).join('') : '<div class="gd-empty">长椅还空着，留第一句话给 TA 吧 💌</div>';
+}
+function resetGardenUI() {
+  gdBuilt = false; gdToolsKey = ''; gdPlotEls = [];
+  boardBuilt = false;              // 从花园回大富翁时强制重建棋盘
+  const grid = $('gdGrid'); if (grid) grid.innerHTML = '';
+  if (gdTimer) { clearInterval(gdTimer); gdTimer = null; }
 }
 
 /* ---------- 环形棋盘：只建一次 ---------- */
@@ -440,7 +755,11 @@ function buildBoard() {
     const bar = t.group && groups[t.group] ? `<div class="tbar" style="background:${groups[t.group].color}"></div>` : '';
     const price = t.price != null && ['property', 'station', 'utility'].includes(t.type) ? `<div class="tprice">${t.price}</div>` : '';
     const nm = t.short || t.name.replace(/^[^\u4e00-\u9fa5a-zA-Z]+\s*/, '');
-    d.innerHTML = `${bar}<div class="ti"><img src="/assets/${img}" alt="" loading="lazy"></div><div class="tn">${escapeHtml(nm)}</div>${price}<div class="towner"></div><div class="tlv"></div>${t.fork ? '<div class="tfork" title="岔路口">🛤️</div>' : ''}`;
+    // v4.0：按地名长度自适应字号；长名点一下弹完整地点名（含类型/价格）
+    const lenCls = nm.length >= 6 ? ' len6' : nm.length === 5 ? ' len5' : nm.length === 4 ? ' len4' : nm.length === 3 ? ' len3' : '';
+    d.title = t.name + (t.price != null ? ' · ' + t.price : '');
+    d._fullName = t.name;
+    d.innerHTML = `${bar}<div class="ti"><img src="/assets/${img}" alt="" loading="lazy"></div><div class="tn${lenCls}">${escapeHtml(nm)}</div>${price}<div class="towner"></div><div class="tlv"></div>${t.fork ? '<div class="tfork" title="岔路口">🛤️</div>' : ''}`;
     b.appendChild(d); tileEls.push(d);
   });
 
@@ -497,6 +816,17 @@ function buildBoard() {
   locTipEl = el('div', 'loc-tip hidden'); locTipEl.id = 'locTip';
   pl.appendChild(locTipEl);
   b.appendChild(pl);
+  // v4.0：点外环格子看完整地点名（长名字在格子里放不下时的兜底）
+  if (!b._tileTapBound) {
+    b._tileTapBound = true;
+    b.addEventListener('click', (e) => {
+      const t = e.target.closest('.tile'); if (!t || !t._fullName) return;
+      const i = Number(t.dataset.idx);
+      const full = board.tiles[i];
+      const extra = full && full.price != null ? ` · 💰${full.price}` : '';
+      toast('📍 ' + t._fullName + extra);
+    });
+  }
   boardBuilt = true;
   setDie($('die1'), 1); setDie($('die2'), 1);
   placePawns(st.players.map((p) => p.pos), true);
@@ -1009,6 +1339,55 @@ $('moneyOpts') && $('moneyOpts').addEventListener('click', (e) => {
 });
 $('moneyCancel') && $('moneyCancel').addEventListener('click', () => $('moneySheet').classList.add('hidden'));
 $('moneySheet') && $('moneySheet').addEventListener('click', (e) => { if (e.target.id === 'moneySheet') $('moneySheet').classList.add('hidden'); });
+
+/* v4.0 放大棋盘：等比放大到可滚动，格子与地名一起变大，按百分比定位零错位 */
+$('zoomBtn') && $('zoomBtn').addEventListener('click', () => {
+  const f = $('boardFrame'); const z = f.classList.toggle('zoomed');
+  $('zoomBtn').classList.toggle('on', z);
+  $('zoomBtn').textContent = z ? '还原棋盘' : '放大棋盘 · 看清地名';
+  beep('click');
+});
+function resetZoom() {
+  const f = $('boardFrame'); if (f) f.classList.remove('zoomed');
+  const z = $('zoomBtn'); if (z) { z.classList.remove('on'); z.textContent = '放大棋盘 · 看清地名'; }
+}
+
+/* ========== v4.0 共享小花园：交互绑定 ========== */
+$('gdSettingsBtn') && $('gdSettingsBtn').addEventListener('click', () => { beep('click'); openSettings(); });
+$('gdExitBtn') && $('gdExitBtn').addEventListener('click', () => {
+  if (!window.confirm('返回主菜单？会解散当前房间，对方也会回到大厅。')) return;
+  doLeave();
+});
+// 常驻动作：签到 / 送花 / 合种树 / 留言 / 重置
+$('gdActions') && $('gdActions').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  const a = b.dataset.act; beep('click');
+  if (a === 'message') {
+    const row = $('gdMsgRow'); row.classList.toggle('hidden');
+    if (!row.classList.contains('hidden')) $('gdMsgInput').focus();
+    return;
+  }
+  if (a === 'reset' && !window.confirm('重置花园？所有植物、装饰和留言会清空，重新开始。')) return;
+  socket.emit('gardenAction', { action: a });
+});
+function sendGdMsg() {
+  const v = ($('gdMsgInput').value || '').trim(); if (!v) return;
+  socket.emit('gardenAction', { action: 'message', value: v });
+  $('gdMsgInput').value = ''; $('gdMsgRow').classList.add('hidden'); beep('coin');
+}
+$('gdMsgSend') && $('gdMsgSend').addEventListener('click', sendGdMsg);
+$('gdMsgInput') && $('gdMsgInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendGdMsg(); });
+// 花园互动条：复用 interact 事件（比心在花园里也会涨爱心）
+$('gdInteractBtns') && $('gdInteractBtns').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  beep('click'); socket.emit('interact', { kind: b.dataset.k });
+});
+// 花园悄悄话
+$('gdChatSend') && $('gdChatSend').addEventListener('click', () => {
+  const v = ($('gdChatInput').value || '').trim(); if (!v) return;
+  socket.emit('chat', { text: v }); $('gdChatInput').value = '';
+});
+$('gdChatInput') && $('gdChatInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('gdChatSend').click(); });
 
 window.addEventListener('error', (e) => { console.warn('[game] error', e.message); });
 })();

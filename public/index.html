@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-<title>💕 双人游戏合集 · 情侣大富翁</title>
-<meta name="app-version" content="v3.3" />
+<title>💕 两个人的游戏屋 · 情侣异地联机小游戏合集</title>
+<meta name="app-version" content="v4.0" />
 <meta name="theme-color" content="#ff8faa" />
-<link rel="stylesheet" href="/style.css?v=7" />
+<link rel="stylesheet" href="/style.css?v=8" />
 </head>
 <body>
 
@@ -19,30 +19,30 @@
   <div class="card lobby-card">
     <div class="brand">
       <div class="brand-avatars"><img src="/assets/avatar-boy.png" alt=""><img src="/assets/avatar-girl.png" alt=""></div>
-      <h1>双人大富翁</h1>
-      <p class="sub">和 TA 一起，绕着爱心城市走一圈 💕</p>
+      <h1>两个人的游戏屋</h1>
+      <p class="sub">一个链接，和 TA 异地一起玩 💕<br>下面挑个游戏就开场～</p>
     </div>
 
     <!-- 游戏合集：一个链接里挑选小游戏 -->
     <div class="arcade">
       <div class="arcade-head">
-        <span class="arcade-title">🎮 双人游戏合集</span>
+        <span class="arcade-title">🎮 挑个游戏一起玩</span>
         <span class="arcade-by">by 寻找格陵兰</span>
       </div>
       <div class="arcade-games" id="gameKindBtns">
         <button class="game-card active" data-v="monopoly">
           <img class="gc-emoji" src="/assets/ic-dice.png" alt="" />
           <span class="gc-name">情侣大富翁</span>
-          <span class="gc-tag">52 格双环 · 立即玩</span>
+          <span class="gc-tag">双环棋盘 · 立即玩</span>
         </button>
-        <button class="game-card soon" disabled>
-          <img class="gc-emoji" src="/assets/ic-gift.png" alt="" />
-          <span class="gc-name">默契你画我猜</span>
-          <span class="gc-tag">敬请期待</span>
+        <button class="game-card" data-v="garden">
+          <img class="gc-emoji" src="/assets/ic-heart.png" alt="" />
+          <span class="gc-name">共享小花园</span>
+          <span class="gc-tag">2.5D · 一起养</span>
         </button>
         <button class="game-card soon" disabled>
           <img class="gc-emoji" src="/assets/ic-chance.png" alt="" />
-          <span class="gc-name">情侣答题 PK</span>
+          <span class="gc-name">更多小游戏</span>
           <span class="gc-tag">敬请期待</span>
         </button>
       </div>
@@ -58,6 +58,8 @@
       <span class="ap-arrow">›</span>
     </button>
 
+    <!-- 大富翁专用设置：选花园时隐藏（花园不用主题/模式/节奏） -->
+    <div id="monopolyOpts">
     <label>选个主题</label>
     <div class="themes" id="themeBtns">
       <button class="theme-btn active" data-v="city">🏙️ 城市冒险</button>
@@ -78,6 +80,7 @@
       <button class="pace-btn active" data-v="standard">⚖️ 标准</button>
       <button class="pace-btn" data-v="fast">⚡ 快节奏</button>
     </div>
+    </div><!-- /monopolyOpts -->
 
     <button id="createBtn" class="primary big">✨ 创建房间</button>
     <div class="divider">或加入 TA 的房间</div>
@@ -155,8 +158,12 @@
     <!-- 进度条 -->
     <div class="progress" id="gProgress"></div>
 
+    <!-- v4.0 棋盘工具条：放大看清地名（所有元素按百分比定位，放大后零错位） -->
+    <div class="board-tools">
+      <button id="zoomBtn" class="zoom-toggle" type="button">放大棋盘 · 看清地名</button>
+    </div>
     <!-- 环形棋盘 -->
-    <div class="board-frame">
+    <div class="board-frame" id="boardFrame">
       <div class="board" id="board">
         <div class="board-center" id="boardCenter">
           <div class="center-heart">💗</div>
@@ -176,14 +183,14 @@
     <div class="event" id="eventBar"></div>
 
     <!-- v3.2 双人实时互动条：旁路动作，任何时刻都能点，对方屏幕即时飘动画 -->
-    <div class="interact-bar" id="interactBar">
-      <div class="ib-head">💕 互动一下 <span>随时给 TA 一点小动静</span></div>
+    <div class="interact-bar gd-interact" id="interactBar">
+      <div class="ib-head"><span class="gd-tip-ico" data-ico="love"></span> 互动一下 <span>随时给 TA 一点小动静</span></div>
       <div class="ib-btns" id="interactBtns">
-        <button data-k="heart" type="button"><i>💗</i><span>比心</span></button>
-        <button data-k="poke" type="button"><i>👉</i><span>戳戳</span></button>
-        <button data-k="gift" type="button"><i>🎁</i><span>送礼</span></button>
-        <button data-k="money" type="button"><i>💰</i><span>送钱</span></button>
-        <button data-k="rps" type="button"><i>✊</i><span>猜拳</span></button>
+        <button data-k="heart" type="button"><i data-ico="heart"></i><span>比心</span></button>
+        <button data-k="poke" type="button"><i data-ico="poke"></i><span>戳戳</span></button>
+        <button data-k="gift" type="button"><i data-ico="gift"></i><span>送礼</span></button>
+        <button data-k="money" type="button"><i data-ico="coin"></i><span>送钱</span></button>
+        <button data-k="rps" type="button"><i data-ico="rps"></i><span>猜拳</span></button>
       </div>
     </div>
 
@@ -207,6 +214,94 @@
       <summary>💬 悄悄话 <span id="chatUnread" class="unread hidden">0</span></summary>
       <div class="chatlog" id="chatList"></div>
       <div class="chatrow"><input id="chatInput" maxlength="40" placeholder="说点什么…" /><button id="chatSend">发送</button></div>
+    </details>
+
+    <footer class="copyright">
+      <span class="cr-line"></span>
+      <span>© 2026 <b>寻找格陵兰</b> · 版权所有</span>
+      <span class="cr-line"></span>
+    </footer>
+  </div>
+</div>
+
+<!-- ============ v4.0 共享小花园（沙盒 · 2.5D 等距） ============ -->
+<div id="garden" class="hidden">
+  <div class="game-wrap">
+    <!-- 顶栏 -->
+    <div class="topbar">
+      <div class="room">房间 <b id="gdCode">------</b></div>
+      <div class="turn" id="gdTurn">共享小花园</div>
+      <div class="topbtns">
+        <button id="gdChatBtn" class="icon-btn" title="悄悄话">💬<span id="gdChatBadge" class="badge hidden">0</span></button>
+        <button id="gdSoundBtn" class="icon-btn" title="音效开关">🔊</button>
+        <button id="gdSettingsBtn" class="icon-btn" title="设置">⚙️</button>
+        <button id="gdExitBtn" class="icon-btn" title="返回主菜单">🏠</button>
+      </div>
+    </div>
+
+    <!-- 状态条：共享金币 / 爱心 / 两人 -->
+    <div class="gd-hud">
+      <div class="gd-stat"><span class="gd-stat-ico" data-ico="coin"></span><span><b id="gdCoins">0</b><small>共享金币</small></span></div>
+      <div class="gd-stat"><span class="gd-stat-ico" data-ico="love"></span><span><b id="gdLove">0</b><small>爱心值</small></span></div>
+      <div class="gd-duo" id="gdDuo"></div>
+    </div>
+    <p class="gd-hud-tip"><span class="gd-tip-ico" data-ico="love"></span> 爱心只靠两个人的共同动作才会涨：一起浇水、合种树、送花、留言～</p>
+
+    <!-- 合种树 -->
+    <div class="gd-cotree" id="gdCotree"></div>
+
+    <!-- 2.5D 等距花园 -->
+    <div class="gd-scene" id="gdScene">
+      <div class="gd-ground"></div>
+      <div class="gd-grid" id="gdGrid"></div>
+      <div class="gd-couple" id="gdCouple"></div>
+    </div>
+
+    <!-- 工具条：先选道具，再点空地 -->
+    <div class="gd-toolbar">
+      <div class="gd-tool-head"><span class="gd-tip-ico" data-ico="basket"></span> 选个道具，再点花园里的地</div>
+      <div class="gd-tools" id="gdTools"></div>
+    </div>
+
+    <!-- 常驻动作 -->
+    <div class="gd-actions" id="gdActions">
+      <button data-act="checkin"><i data-ico="checkin"></i><span>签到</span></button>
+      <button data-act="gift"><i data-ico="bouquet"></i><span>送花</span></button>
+      <button data-act="cotree"><i data-ico="tree"></i><span>合种树</span></button>
+      <button data-act="message"><i data-ico="letter"></i><span>留言</span></button>
+      <button data-act="reset" class="warn"><i data-ico="reset"></i><span>重置</span></button>
+    </div>
+    <div class="gd-msg-row hidden" id="gdMsgRow">
+      <input id="gdMsgInput" maxlength="40" placeholder="在长椅上给 TA 留句话…" />
+      <button id="gdMsgSend">留下</button>
+    </div>
+
+    <!-- 双人互动（与大富翁共用 interact 事件 / 飘动画层） -->
+    <div class="interact-bar gd-interact">
+      <div class="ib-head"><span class="gd-tip-ico" data-ico="love"></span> 互动一下 <span>随时给 TA 一点小动静</span></div>
+      <div class="ib-btns" id="gdInteractBtns">
+        <button data-k="heart" type="button"><i data-ico="heart"></i><span>比心</span></button>
+        <button data-k="poke" type="button"><i data-ico="poke"></i><span>戳戳</span></button>
+        <button data-k="gift" type="button"><i data-ico="gift"></i><span>送礼</span></button>
+        <button data-k="rps" type="button"><i data-ico="rps"></i><span>猜拳</span></button>
+      </div>
+    </div>
+
+    <!-- 长椅留言 -->
+    <details class="panel" id="gdMsgPanel">
+      <summary>💌 长椅留言 <span id="gdMsgCount"></span></summary>
+      <div class="gd-messages" id="gdMsgs"></div>
+    </details>
+    <!-- 日志 -->
+    <details class="panel">
+      <summary>📜 花园日志</summary>
+      <div class="log" id="gdLog"></div>
+    </details>
+    <!-- 悄悄话 -->
+    <details class="panel" id="gdChatPanel">
+      <summary>💬 悄悄话 <span id="gdChatUnread" class="unread hidden">0</span></summary>
+      <div class="chatlog" id="gdChatList"></div>
+      <div class="chatrow"><input id="gdChatInput" maxlength="40" placeholder="说点什么…" /><button id="gdChatSend">发送</button></div>
     </details>
 
     <footer class="copyright">
@@ -320,6 +415,6 @@
 <div id="interactFxLayer" class="interact-fx-layer"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="/game.js?v=6"></script>
+<script src="/game.js?v=7"></script>
 </body>
 </html>
