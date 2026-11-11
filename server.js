@@ -30,6 +30,15 @@ const CONNECT4_VERSION = 1; // v4.4：主题四子棋（爱心版 Connect Four�
 const CONNECT4_COLS = 7, CONNECT4_ROWS = 6, CONNECT4_WIN = 4; // 经典 7×6 竖屏棋盘，先连四子胜
 const CONNECT4_COLORS = ['#ff5e7e', '#5b8ff9']; // 💗粉心 / 💙蓝心
 
+const SLINGSHOT_VERSION = 1; // v4.5：双人弹射对战（世界坐标 100x62，服务端权威物理模拟）
+/* 物理内核抽到 public/ss-physics.js —— 服务端 require、客户端 <script> 共用同一份，
+   拉弓时的虚线预览与真正飞出去的弹道完全一致，不会出现「看着能中却打不中」。
+   世界坐标：宽 100 / 高 62 / 地面 y=50；客户端按画布等比缩放。 */
+const SSPhys = require('./public/ss-physics.js');
+const { SS_W, SS_H, SS_GROUND, SS_R, SS_HP, SS_DMG, SS_SELF_DMG,
+  SS_SLING, SS_MAN, SS_MAN_R, SS_BLOCK_X, SS_BLOCK_W, SS_BLOCK_Y, SS_BLOCK_H, SS_BLOCK_HP,
+  ssR1, ssSimulate } = SSPhys;
+
 /* 灰度开关（默认全开；出问题把对应项设 0 即可回退某项能力） */
 const F = {
   animation: process.env.FEATURE_ANIM !== '0',
@@ -218,6 +227,7 @@ const GAME_KINDS = {
   monopoly: { name: '情侣大富翁', icon: '🎲', tag: '52 格双环 · 岔路抄近道', ready: true },
   garden:   { name: '共享小花园', icon: '🌷', tag: '2.5D 等距 · 一起养', ready: true },
   connect4: { name: '主题四子棋', icon: '💗', tag: '爱心连线 · 抢先四连', ready: true },
+  slingshot: { name: '双人弹射对战', icon: '🏹', tag: '拉弓互射 · 打爆对面城堡', ready: true },
 };
 const MODES = {
   classic: { name: '经典对战', maxRounds: 30, targetLaps: 0, coopTarget: 0, heartTarget: 0,
@@ -479,6 +489,7 @@ function pushLog(room, msg) {
 function boardState(room) {
   if (room.gameKind === 'garden') return gardenBoard(room);   // v4.0 共享小花园
   if (room.gameKind === 'connect4') return connect4Board(room); // v4.4 主题四子棋
+  if (room.gameKind === 'slingshot') return slingshotBoard(room); // v4.5 双人弹射对战
   return {
     boardVersion: BOARD_VERSION, gameKind: room.gameKind || 'monopoly',
     theme: room.theme, themeName: THEMES[room.theme].name,
@@ -494,6 +505,7 @@ function boardState(room) {
 function publicState(room, forId) {
   if (room.gameKind === 'garden') return gardenPublicState(room, forId);  // v4.0 共享小花园
   if (room.gameKind === 'connect4') return connect4PublicState(room, forId); // v4.4 主题四子棋
+  if (room.gameKind === 'slingshot') return slingshotPublicState(room, forId); // v4.5 双人弹射对战
   const g = room.game;
   const tiles = THEMES[room.theme].tiles;
   const td = tiles.map((_, i) => {
@@ -590,6 +602,92 @@ function connect4CheckWin(board, r0, c0, who) {
     if (cells.length >= CONNECT4_WIN) return cells;
   }
   return null;
+}
+
+/* =========================================================
+ *  v4.5 双人弹射对战辅助函数（顶层作用域）
+ *  两人各守一座城堡，轮流拉弓射弹丸（抛物线），先打空对方 HP 者胜。
+ *  服务器权威：物理模拟在服务端跑，只把「轨迹点序列 + 命中结果」广播出去，
+ *  客户端纯回放 —— 两端看到的一定是同一发弹，不需要同步物理、也无法作弊。
+ * ======================================================= */
+function makeSlingshot() {
+  const blocks = [];
+  for (let s = 0; s < 2; s++) {
+    SS_BLOCK_Y.forEach((y, i) => {
+      blocks.push({ id: s + '-' + i, side: s, x: SS_BLOCK_X[s], y, w: SS_BLOCK_W, h: SS_BLOCK_H, hp: SS_BLOCK_HP });
+    });
+  }
+  return { ver: SLINGSHOT_VERSION, hp: [SS_HP, SS_HP], turn: 0, winner: null,
+    blocks, shots: 0, lastShot: null, round: 1, startedAt: Date.now(), log: [] };
+}
+function buildSlingshot(room) {
+  room.slingshot = makeSlingshot();
+  ssLog(room, '🏹 弹射对战开始！轮流拉弓，先把对面小人打到 0 血就赢（挡路的墙可以先轰掉）');
+}
+function ssLog(room, msg) {
+  const s = room.slingshot; if (!s) return;
+  s.log = s.log || [];
+  s.log.unshift({ t: Date.now(), msg });
+  if (s.log.length > 24) s.log.pop();
+}
+function slingshotBoard(room) {
+  return { boardVersion: BOARD_VERSION, slingshotVersion: SLINGSHOT_VERSION, gameKind: 'slingshot',
+    w: SS_W, h: SS_H, ground: SS_GROUND, manR: SS_MAN_R, ballR: SS_R, hpMax: SS_HP,
+    sling: SS_SLING, man: SS_MAN,
+    names: GAME_KINDS.slingshot ? GAME_KINDS.slingshot.name : '双人弹射对战' };
+}
+function slingshotPublicState(room, forId) {
+  const s = room.slingshot;
+  return {
+    code: room.code, gameKind: 'slingshot', ver: room.ver || 0,
+    boardVersion: BOARD_VERSION, slingshotVersion: SLINGSHOT_VERSION,
+    started: !!s, w: SS_W, h: SS_H, ground: SS_GROUND, hpMax: SS_HP,
+    manR: SS_MAN_R, ballR: SS_R, sling: SS_SLING, man: SS_MAN,
+    hp: s ? s.hp : [SS_HP, SS_HP], turn: s ? s.turn : 0,
+    winner: s ? s.winner : null, shots: s ? s.shots : 0, round: s ? s.round : 1,
+    blocks: s ? s.blocks : [], lastShot: s ? s.lastShot : null,
+    log: s ? (s.log || []).slice(0, 12) : [],
+    players: room.players.map((p) => ({ name: p.name, avatar: p.avatar, connected: p.connected, isYou: p.id === forId,
+      ...(p.id === forId ? { token: p.token } : {}) })),
+  };
+}
+/* 结算一发：扣血 / 破墙 / 切换回合 / 判胜负 */
+function ssApplyShot(room, by, angleDeg, power) {
+  const s = room.slingshot;
+  const { path, hit, block } = ssSimulate(by, angleDeg, power, s.blocks);
+  s.shots++;
+  let dmg = 0, dmgTo = null;
+  const broke = [];
+  if (hit && hit.type === 'man') {
+    dmgTo = hit.side;
+    dmg = hit.side === by ? SS_SELF_DMG : SS_DMG;
+    s.hp[hit.side] = Math.max(0, s.hp[hit.side] - dmg);
+  } else if (hit && hit.type === 'block' && block) {
+    block.hp = Math.max(0, block.hp - 1);
+    if (block.hp <= 0) broke.push(block.id);
+  }
+  s.lastShot = { seq: s.shots, by, angle: ssR1(angleDeg), power: Math.round(power * 100) / 100,
+    path, hit, dmg, dmgTo, broke };
+  const me = room.players[by] ? room.players[by].name : 'TA';
+  const foe = room.players[1 - by] ? room.players[1 - by].name : '对手';
+  if (hit && hit.type === 'man') {
+    if (dmgTo === by) ssLog(room, '💥 ' + me + ' 打中了自己人… 自损 ' + dmg + ' 血（还剩 ' + s.hp[by] + '）');
+    else ssLog(room, '💥 ' + me + ' 正中 ' + foe + '，-' + dmg + ' 血（剩 ' + s.hp[dmgTo] + '）');
+  } else if (broke.length) {
+    ssLog(room, '🧱 ' + me + ' 轰塌了一块掩体墙');
+  } else if (hit && hit.type === 'ground') {
+    ssLog(room, '🪨 ' + me + ' 这一发砸在地上，没打中');
+  } else {
+    ssLog(room, '💨 ' + me + ' 这一发飞出去了…');
+  }
+  if (s.hp[0] <= 0 || s.hp[1] <= 0) {
+    s.winner = s.hp[1] <= 0 ? 0 : 1;
+    ssLog(room, '🏆 ' + (room.players[s.winner] ? room.players[s.winner].name : 'TA') + ' 把对面打空了，赢啦！');
+  } else {
+    s.turn = 1 - s.turn;
+    s.round = Math.floor(s.shots / 2) + 1;
+  }
+  return s;
 }
 
 function broadcast(room, { full = false } = {}) {
@@ -1417,7 +1515,7 @@ function schedulePersist(room) {
   persistTimers.set(room.code, t);
 }
 function persistRoom(room) {
-  if (room.gameKind === 'connect4') return; // v4.4：四子棋短时对局，不持久化（避免 loadSaves 误当大富翁恢复）
+  if (room.gameKind === 'connect4' || room.gameKind === 'slingshot') return; // v4.4/v4.5：短时对局不持久化
   const data = {
     boardVersion: BOARD_VERSION, gardenVersion: GARDEN_VERSION, code: room.code, gameKind: room.gameKind || 'monopoly', theme: room.theme, mode: room.mode,
     pace: room.pace, ver: room.ver || 0,
@@ -1554,7 +1652,7 @@ io.on('connection', (socket) => {
     const room = rooms.get((code || '').toUpperCase());
     if (!room) return socket.emit('errorMsg', '房间不存在');
     if (room.players.length >= 2) return socket.emit('errorMsg', '房间已满');
-    if (room.game || room.connect4) return socket.emit('errorMsg', '游戏已开始，无法加入');
+    if (room.game || room.connect4 || room.slingshot) return socket.emit('errorMsg', '游戏已开始，无法加入');
     const p = makePlayer(socket.id, name, '#5b8ff9', genToken());
     p.avatar = (AVATAR_IDS.includes(avatar) || avatar === 'custom') ? avatar : 'girl';
     room.players.push(p);
@@ -1599,6 +1697,10 @@ io.on('connection', (socket) => {
     if (room.gameKind === 'connect4') {      // v4.4：四子棋不用 mode/pace/theme，直接建棋盘
       if (room.connect4) return;
       buildConnect4(room); sendBoard(room); broadcast(room); return;
+    }
+    if (room.gameKind === 'slingshot') {     // v4.5：弹射对战不用 mode/pace/theme，直接建战场
+      if (room.slingshot) return;
+      buildSlingshot(room); sendBoard(room); broadcast(room); return;
     }
     if (mode && MODES[mode]) room.mode = mode;
     if (pace && PACES[pace]) room.pace = pace;
@@ -1779,6 +1881,7 @@ io.on('connection', (socket) => {
     if (!room) return socket.emit('needResync');
     if (room.gameKind === 'garden') return;            // v4.0：花园用 gardenAction.reset
     if (room.gameKind === 'connect4') { room.connect4 = null; deleteSave(room.code); broadcast(room); return; }
+    if (room.gameKind === 'slingshot') { buildSlingshot(room); broadcast(room); return; }
     room.game = null; deleteSave(room.code); broadcast(room);
   });
 
@@ -1914,6 +2017,27 @@ io.on('connection', (socket) => {
     broadcast(room);
   });
 
+  /* =======================================================
+   *  v4.5 双人弹射对战
+   *  两人各守一座城堡，轮流拉弓（角度 + 力度），弹丸抛物线飞出，
+   *  命中对方小人扣血、命中掩体墙可把墙轰塌，先把对面打完就赢。
+   *  服务器权威：客户端只发 {angle, power}，服务端跑物理并广播完整轨迹，
+   *  客户端按轨迹纯回放 —— 两端一致、改前端也作弊不了。
+   * ======================================================= */
+  socket.on('slingshotAction', ({ angle, power } = {}) => {
+    const room = findRoomBySocket(socket.id);
+    if (!room || room.gameKind !== 'slingshot' || !room.slingshot) return socket.emit('needResync');
+    const s = room.slingshot;
+    if (s.winner !== null) return;                            // 已结束
+    const idx = room.players.findIndex((x) => x.id === socket.id);
+    if (idx < 0 || idx !== s.turn) return socket.emit('errorMsg', '还没轮到你哦～');
+    const ang = Number(angle), pw = Number(power);
+    if (!Number.isFinite(ang) || !Number.isFinite(pw)) return;
+    if (pw < 0.05) return socket.emit('errorMsg', '弹弓还没拉开呢，再用点力气～');
+    ssApplyShot(room, idx, ang, pw);
+    broadcast(room);
+  });
+
   /* v3.1 主动退出：两人房一人离开即解散，明确广播给对方，避免对方卡在原地 */
   socket.on('leaveRoom', () => {
     const room = findRoomBySocket(socket.id);
@@ -1936,6 +2060,12 @@ io.on('connection', (socket) => {
       const p = room.players.find((x) => x.id === socket.id);
       ['_auctionTimer', '_miniTimer', '_choiceTimer'].forEach((k) => clearTimeout(room[k]));
       room.connect4 = null; deleteSave(room.code);
+      io.to(room.code).emit('sessionEnded', { by: p ? p.name : '对方' }); broadcast(room); return;
+    }
+    if (room.gameKind === 'slingshot') {
+      const p = room.players.find((x) => x.id === socket.id);
+      ['_auctionTimer', '_miniTimer', '_choiceTimer'].forEach((k) => clearTimeout(room[k]));
+      room.slingshot = null; deleteSave(room.code);
       io.to(room.code).emit('sessionEnded', { by: p ? p.name : '对方' }); broadcast(room); return;
     }
     if (!room.game) return socket.emit('needResync');
@@ -2000,4 +2130,4 @@ server.on('error', (e) => {
   if (e.code === 'EADDRINUSE') console.error(`⚠️ 端口 ${PORT} 已被占用（可能已有实例在运行），本实例退出。`);
   else console.error('服务器错误:', e);
 });
-server.listen(PORT, () => console.log(`💕 两个人的游戏屋 v4.4 已启动: http://localhost:${PORT}`));
+server.listen(PORT, () => console.log(`💕 两个人的游戏屋 v4.5 已启动: http://localhost:${PORT}`));

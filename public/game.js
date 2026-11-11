@@ -84,31 +84,42 @@ function beep(type) {
 }
 function toggleSound() {
   soundOn = !soundOn;
-  ['soundBtn', 'gdSoundBtn', 'c4SoundBtn'].forEach((id) => { const e = $(id); if (e) e.textContent = soundOn ? '🔊' : '🔇'; });
+  ['soundBtn', 'gdSoundBtn', 'c4SoundBtn', 'ssSoundBtn'].forEach((id) => { const e = $(id); if (e) e.textContent = soundOn ? '🔊' : '🔇'; });
   const sv = $('setSoundVal'); if (sv) sv.textContent = soundOn ? '开' : '关';
   if (soundOn) beep('click');
 }
 $('soundBtn') && $('soundBtn').addEventListener('click', toggleSound);
 $('gdSoundBtn') && $('gdSoundBtn').addEventListener('click', toggleSound);
 $('c4SoundBtn') && $('c4SoundBtn').addEventListener('click', toggleSound);
+$('ssSoundBtn') && $('ssSoundBtn').addEventListener('click', toggleSound);
 
 /* ---------- v3.1 顶栏：悄悄话 / 设置 / 退出主菜单 ---------- */
+/* v4.5：聊天面板/角标按 gameKind 映射，避免每加一款游戏就多一层三元嵌套 */
+const CHAT_UI = {
+  garden:    { panel: 'gdChatPanel', badge: 'gdChatBadge', unread: 'gdChatUnread', list: 'gdChatList' },
+  connect4:  { panel: 'c4ChatPanel', badge: 'c4ChatBadge', unread: 'c4ChatUnread', list: 'c4ChatList' },
+  slingshot: { panel: 'ssChatPanel', badge: 'ssChatBadge', unread: 'ssChatUnread', list: 'ssChatList' },
+  monopoly:  { panel: 'chatPanel', badge: 'chatBadge', unread: 'chatUnread', list: 'chatList' },
+};
+function chatUI(gk) { return CHAT_UI[gk] || CHAT_UI.monopoly; }
 function clearUnread() {
   unreadChat = 0;
-  ['chatBadge', 'gdChatBadge', 'c4ChatBadge', 'chatUnread', 'gdChatUnread', 'c4ChatUnread'].forEach((id) => {
+  ['chatBadge', 'gdChatBadge', 'c4ChatBadge', 'ssChatBadge',
+   'chatUnread', 'gdChatUnread', 'c4ChatUnread', 'ssChatUnread'].forEach((id) => {
     const e = $(id); if (e) { e.classList.add('hidden'); e.textContent = '0'; }
   });
 }
 function openChat() {
   const gk = st && st.gameKind;
-  const p = gk === 'garden' ? $('gdChatPanel') : (gk === 'connect4' ? $('c4ChatPanel') : $('chatPanel')); if (!p) return;
+  const p = $(chatUI(gk).panel); if (!p) return;
   p.open = true; clearUnread();
   p.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 $('chatBtn') && $('chatBtn').addEventListener('click', () => { beep('click'); openChat(); });
 $('gdChatBtn') && $('gdChatBtn').addEventListener('click', () => { beep('click'); openChat(); });
 $('c4ChatBtn') && $('c4ChatBtn').addEventListener('click', () => { beep('click'); openChat(); });
-['chatPanel', 'gdChatPanel'].forEach((id) => {
+$('ssChatBtn') && $('ssChatBtn').addEventListener('click', () => { beep('click'); openChat(); });
+['chatPanel', 'gdChatPanel', 'c4ChatPanel', 'ssChatPanel'].forEach((id) => {
   const e = $(id); if (e) e.addEventListener('toggle', () => { if (e.open) clearUnread(); });
 });
 
@@ -119,7 +130,8 @@ function openSettings() {
   const gk = st && st.gameKind;
   const isG = gk === 'garden';
   const isC4 = gk === 'connect4';
-  // 花园房 / 四子棋房：玩法速览换成本游戏说明、重开按钮文案同步
+  const isSS = gk === 'slingshot';
+  // 花园房 / 四子棋房 / 弹射房：玩法速览换成本游戏说明、重开按钮文案同步
   const help = document.querySelector('.set-help');
   if (help) {
     if (_monoHelp === null) _monoHelp = help.innerHTML;
@@ -127,13 +139,19 @@ function openSettings() {
       ? '<b>花园玩法速览</b><br>选个道具点空地种花/摆装饰 · 点有苗的地浇水<br>两人一起浇水、合种树、送花、留言才会涨爱心 💗<br>🌰 种子会按真实时间发芽、开花，常回来看看～'
       : isC4
       ? '<b>四子棋玩法</b><br>7 列×6 行棋盘，两人各执一种颜色的爱心 💗粉 / 💙蓝<br>轮流选一列，爱心会掉到该列最底，先把 4 颗心连成一线（横/竖/斜）就赢～<br>谁先连成谁赢，棋盘填满则平局。'
+      : isSS
+      ? '<b>弹射玩法</b><br>手指朝对方方向拖动 → 松开就发射，拖得越远力度越大，虚线是预判弹道<br>打中对方小人 -34 血，打空 100 血就赢；挡路的墙可以一炮轰塌<br>角度太平会被墙挡住，抬高一点可以越过城墙吊射～'
       : _monoHelp;
   }
   const rr = $('setRestart');
   if (rr) {
-    const label = isG ? '🔄 重置花园 ' : (isC4 ? '🔄 重开对局 ' : '🔄 重开本局 ');
-    rr.firstChild.textContent = label;
-    const sp = rr.querySelector('span'); if (sp) sp.textContent = isG ? '清空花园重新开始' : (isC4 ? '清空棋盘再来一局' : '双方回到等待页');
+    /* v4.5 修复：v4.1 的 emoji→SVG 替换把按钮开头的 🔄 变成了 <svg> 元素，
+       导致 firstChild 不再是文本节点、文案一直改不掉。这里整段重建文本节点。 */
+    const label = isG ? '重置花园' : (isC4 ? '重开对局' : isSS ? '重开对战' : '重开本局');
+    const sp = rr.querySelector('span');
+    [...rr.childNodes].forEach((n) => { if (n !== sp) rr.removeChild(n); });
+    rr.insertBefore(document.createTextNode(label + ' '), sp || null);
+    if (sp) sp.textContent = isG ? '清空花园重新开始' : (isC4 ? '清空棋盘再来一局' : isSS ? '血量和城墙全部恢复' : '双方回到等待页');
   }
   $('settings').classList.remove('hidden');
 }
@@ -141,7 +159,7 @@ function closeSettings() { $('settings').classList.add('hidden'); }
 function doLeave() {
   socket.emit('leaveRoom');
   clearSession(); st = null; board = null; boardBuilt = false; clearUnread();
-  resetZoom(); resetGardenUI(); resetConnect4UI();
+  resetZoom(); resetGardenUI(); resetConnect4UI(); resetSlingshotUI();
   $('over').classList.add('hidden'); $('settings').classList.add('hidden');
   show('lobby');
 }
@@ -153,8 +171,10 @@ $('setRestart') && $('setRestart').addEventListener('click', () => {
   const gk = st && st.gameKind;
   const isG = gk === 'garden';
   const isC4 = gk === 'connect4';
+  const isSS = gk === 'slingshot';
   const msg = isG ? '重置花园？所有植物、装饰和留言会清空，重新开始。'
     : isC4 ? '重开对局？当前棋盘会清空，双方一起回到等待页再来一局。'
+    : isSS ? '重开对战？血量和城墙会全部恢复，双方回到等待页再来一局。'
     : '重开本局？当前进度会清空，双方一起回到等待页重新选择模式。';
   if (!window.confirm(msg)) return;
   closeSettings();
@@ -172,7 +192,7 @@ $('exitBtn') && $('exitBtn').addEventListener('click', () => {
 
 /* ---------- 屏幕切换 ---------- */
 function show(which) {
-  ['lobby', 'waiting', 'game', 'garden', 'connect4'].forEach((x) => $(x).classList.toggle('hidden', x !== which));
+  ['lobby', 'waiting', 'game', 'garden', 'connect4', 'slingshot'].forEach((x) => $(x).classList.toggle('hidden', x !== which));
   window.scrollTo(0, 0);
 }
 function showOverlay(title, desc, btns) {
@@ -207,7 +227,9 @@ const gkBtns = $('gameKindBtns');
 function syncGameKindUI() {
   const isMono = sel.gameKind === 'monopoly';
   const opts = $('monopolyOpts'); if (opts) opts.classList.toggle('hidden', !isMono);
-  const cbtn = $('createBtn'); if (cbtn) cbtn.textContent = sel.gameKind === 'garden' ? '🌷 创建小花园' : '✨ 创建房间';
+  const cbtn = $('createBtn');
+  if (cbtn) cbtn.textContent = sel.gameKind === 'garden' ? '🌷 创建小花园'
+    : sel.gameKind === 'slingshot' ? '🏹 创建对战房' : '✨ 创建房间';
 }
 if (gkBtns) gkBtns.addEventListener('click', (e) => {
   const b = e.target.closest('.game-card:not(.soon)'); if (!b) return;
@@ -242,9 +264,9 @@ $('copyCode').onclick = () => {
   $('copyCode').textContent = '✅ 已复制 ' + t; setTimeout(() => $('copyCode').textContent = '📋 复制房间号', 1600);
 };
 $('startBtn').onclick = () => { beep('click'); socket.emit('startGame', { ...sel }); };
-$('backBtn').onclick = () => { if (S.code) socket.emit('leaveRoom'); clearSession(); st = null; board = null; boardBuilt = false; clearUnread(); resetGardenUI(); resetConnect4UI(); show('lobby'); };
+$('backBtn').onclick = () => { if (S.code) socket.emit('leaveRoom'); clearSession(); st = null; board = null; boardBuilt = false; clearUnread(); resetGardenUI(); resetConnect4UI(); resetSlingshotUI(); show('lobby'); };
 $('againBtn').onclick = () => { beep('click'); $('over').classList.add('hidden'); socket.emit('restart'); };
-$('homeBtn').onclick = () => { if (S.code) socket.emit('leaveRoom'); clearSession(); st = null; board = null; boardBuilt = false; clearUnread(); resetGardenUI(); resetConnect4UI(); $('over').classList.add('hidden'); show('lobby'); };
+$('homeBtn').onclick = () => { if (S.code) socket.emit('leaveRoom'); clearSession(); st = null; board = null; boardBuilt = false; clearUnread(); resetGardenUI(); resetConnect4UI(); resetSlingshotUI(); $('over').classList.add('hidden'); show('lobby'); };
 $('chatSend').onclick = () => {
   const v = ($('chatInput').value || '').trim(); if (!v) return;
   socket.emit('chat', { text: v }); $('chatInput').value = '';
@@ -255,6 +277,11 @@ $('c4ChatSend') && ($('c4ChatSend').onclick = () => {
   socket.emit('chat', { text: v }); $('c4ChatInput').value = '';
 });
 $('c4ChatInput') && $('c4ChatInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('c4ChatSend').click(); });
+$('ssChatSend') && ($('ssChatSend').onclick = () => {
+  const v = ($('ssChatInput').value || '').trim(); if (!v) return;
+  socket.emit('chat', { text: v }); $('ssChatInput').value = '';
+});
+$('ssChatInput') && $('ssChatInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('ssChatSend').click(); });
 
 /* ---------- Socket 事件 ---------- */
 socket.on('errorMsg', (m) => { $('lobbyMsg').textContent = m; toast('⚠️ ' + m); });
@@ -305,21 +332,21 @@ socket.on('roomClosed', ({ by }) => {
 socket.on('sessionEnded', ({ by }) => { toast('🔄 ' + (by || '对方') + ' 结束了本局，回到等待页'); beep('click'); });
 socket.on('chat', ({ name, text, color }) => {
   // v4.0：同一条消息写入各视图各自的聊天框（大富翁 / 花园 / 四子棋）
-  ['chatList', 'gdChatList', 'c4ChatList'].forEach((id) => {
+  ['chatList', 'gdChatList', 'c4ChatList', 'ssChatList'].forEach((id) => {
     const c = $(id); if (!c) return;
     const d = el('div', 'chat-msg'); d.innerHTML = `<b style="color:${color}">${escapeHtml(name)}</b>：${escapeHtml(text)}`;
     c.appendChild(d); c.scrollTop = c.scrollHeight;
   });
   // 折叠时也能看到：未读角标 + 弹窗式气泡（按当前所在游戏挑对应面板）
   const gk = st && st.gameKind;
-  const isG = gk === 'garden', isC4 = gk === 'connect4';
-  const panel = isG ? $('gdChatPanel') : (isC4 ? $('c4ChatPanel') : $('chatPanel'));
+  const ui = chatUI(gk);
+  const panel = $(ui.panel);
   if (!panel || !panel.open) {
     unreadChat++;
-    [isG ? 'gdChatBadge' : (isC4 ? 'c4ChatBadge' : 'chatBadge')].forEach((id) => {
+    [ui.badge].forEach((id) => {
       const b = $(id); if (b) { b.textContent = String(Math.min(99, unreadChat)); b.classList.remove('hidden'); }
     });
-    [isG ? 'gdChatUnread' : (isC4 ? 'c4ChatUnread' : 'chatUnread')].forEach((id) => {
+    [ui.unread].forEach((id) => {
       const u = $(id); if (u) { u.textContent = String(unreadChat); u.classList.remove('hidden'); }
     });
   }
@@ -449,6 +476,10 @@ function tryRender() {
     if (!st.started) { renderWaiting(); return; }
     hideOverlay(); show('connect4'); renderConnect4(); return;
   }
+  if (st.gameKind === 'slingshot') {      // v4.5 双人弹射对战：完全独立的视图与渲染
+    if (!st.started) { renderWaiting(); return; }
+    hideOverlay(); show('slingshot'); renderSlingshot(); return;
+  }
   if (!st.started) { renderWaiting(); return; }
   if (!board) return;                     // 等 board 到达
   if (board.boardVersion !== st.boardVersion) { socket.emit('requestSync'); return; }
@@ -485,7 +516,9 @@ function renderWaiting() {
   // 花园房 / 四子棋房用不到主题/模式/节奏，隐藏设置；标题与按钮文案也切换
   $('waitSetup').classList.toggle('hidden', !isHost || !isMono);
   const sb = $('startBtn');
-  sb.textContent = isG ? '🌷 进入花园' : (st.gameKind === 'connect4' ? '💗 开始四子棋' : '🎮 开始游戏');
+  sb.textContent = isG ? '🌷 进入花园'
+    : st.gameKind === 'connect4' ? '💗 开始四子棋'
+    : st.gameKind === 'slingshot' ? '🏹 开始对战' : '🎮 开始游戏';
   sb.classList.toggle('hidden', !(isHost && n >= 2));
   if (isMono) syncWaitBtns();
 }
@@ -869,6 +902,441 @@ function renderConnect4() {
   }
 
   paintGdIcons($('connect4'));      // 互动条 / 提示图标用 SVG
+}
+
+/* ==================================================================
+ * v4.5 双人弹射对战（拉弓互射 · 服务器权威物理）
+ * 服务端跑物理 → 广播「轨迹点序列 + 命中结果」→ 前端只负责回放。
+ * 拉弓时的虚线预测直接用 ss-physics.js（与服务端同一份代码），
+ * 所以「看着能中」和「真的能中」完全一致，不会骗人。
+ * ================================================================== */
+const SP = window.SSPhysics || {};
+const SS_COLORS = ['#ff5e7e', '#5b8ff9'];
+let ssW = 100, ssH = 62;                 // 世界尺寸（以 state 下发为准）
+let ssBuilt = false, ssAnim = null, ssLastSeq = 0, ssWinnerKey = '';
+let ssDrag = false, ssAim = null, ssFitCache = null;
+let ssBgCanvas = null, ssBgKey = '';
+
+function resetSlingshotUI() {
+  if (ssAnim) { cancelAnimationFrame(ssAnim); ssAnim = null; }
+  ssBuilt = false; ssLastSeq = 0; ssWinnerKey = ''; ssDrag = false; ssAim = null;
+  ssFitCache = null; ssBgCanvas = null; ssBgKey = '';
+  ['ssPlayers', 'ssLog', 'ssChatList'].forEach((id) => { const e = $(id); if (e) e.innerHTML = ''; });
+  const w = $('ssPowerWrap'); if (w) w.classList.add('hidden');
+  const c = $('ssCanvas');
+  if (c) { const g = c.getContext('2d'); if (g) g.clearRect(0, 0, c.width, c.height); }
+}
+
+/* 画布尺寸：CSS 宽度撑满，高度按世界宽高比，内部按 dpr 放大保证清晰 */
+function ssFit() {
+  const c = $('ssCanvas'); if (!c) return null;
+  const stage = c.parentElement;
+  const cssW = Math.max(200, (stage ? stage.clientWidth : 320) || 320);
+  const cssH = Math.round(cssW * ssH / ssW);
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const pxW = Math.round(cssW * dpr), pxH = Math.round(cssH * dpr);
+  if (ssFitCache && ssFitCache.pxW === pxW && ssFitCache.pxH === pxH) return ssFitCache;
+  c.style.height = cssH + 'px';
+  c.width = pxW; c.height = pxH;
+  ssFitCache = { c, ctx: c.getContext('2d'), pxW, pxH, cssW, cssH, k: pxW / ssW };
+  ssBgKey = '';                       // 尺寸变了，背景要重画
+  return ssFitCache;
+}
+
+/* 静态背景（天空/云/远山/地面/塔楼）预渲染到离屏画布，每帧只贴图 */
+function ssDrawBg(fit) {
+  const key = fit.pxW + 'x' + fit.pxH;
+  if (ssBgKey === key && ssBgCanvas) return ssBgCanvas;
+  const cv = ssBgCanvas || (ssBgCanvas = document.createElement('canvas'));
+  cv.width = fit.pxW; cv.height = fit.pxH;
+  const g = cv.getContext('2d'), k = fit.k;
+  const GY = (SP.SS_GROUND || 50) * k;
+
+  const sky = g.createLinearGradient(0, 0, 0, fit.pxH);
+  sky.addColorStop(0, '#ffe4ef'); sky.addColorStop(0.5, '#ffd3e4'); sky.addColorStop(1, '#fff0e2');
+  g.fillStyle = sky; g.fillRect(0, 0, fit.pxW, fit.pxH);
+
+  // 云
+  g.fillStyle = 'rgba(255,255,255,.78)';
+  [[14, 8, 3.4], [42, 5, 2.6], [72, 10, 4], [92, 6, 2.4]].forEach(([x, y, r]) => {
+    g.beginPath(); g.arc(x * k, y * k, r * k, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.arc((x + r * 0.9) * k, (y + r * 0.15) * k, r * 0.78 * k, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.arc((x - r * 0.85) * k, (y + r * 0.2) * k, r * 0.7 * k, 0, Math.PI * 2); g.fill();
+  });
+
+  // 远山
+  g.fillStyle = 'rgba(190,210,235,.55)';
+  [[50, 30, 26], [22, 34, 18], [78, 33, 20]].forEach(([cx, cy, r]) => {
+    g.beginPath(); g.arc(cx * k, cy * k, r * k, Math.PI, 0); g.fill();
+  });
+
+  // 草地
+  g.fillStyle = '#93d68d'; g.fillRect(0, GY, fit.pxW, fit.pxH - GY);
+  g.fillStyle = '#7ec878'; g.fillRect(0, GY, fit.pxW, Math.max(1.5, 1.1 * k));
+  g.fillStyle = 'rgba(255,255,255,.35)';
+  for (let i = 0; i < 26; i++) {                     // 草叶点缀
+    const gx = (i * 4.1 + 2) * k, gh = (0.9 + (i % 3) * 0.5) * k;
+    g.fillRect(gx, GY - gh, Math.max(1, 0.35 * k), gh);
+  }
+
+  // 双方塔楼（弹弓架在上面）—— 做成带城垛的小城堡，别太细不然像柱子
+  [0, 1].forEach((i) => {
+    const sl = (SP.SS_SLING && SP.SS_SLING[i]) || { x: i ? 91 : 9, y: 37 };
+    const bw = 10 * k, bx = (sl.x - 5) * k, by = (sl.y + 1.6) * k, bh = GY - by;
+    const body = i === 0 ? '#e8c8b2' : '#c4d5f0';
+    const dark = i === 0 ? '#d6ae94' : '#a9bde0';
+    g.fillStyle = body; g.fillRect(bx, by, bw, bh);
+    // 砖纹
+    g.fillStyle = dark;
+    const rows = Math.max(2, Math.floor(bh / (2.8 * k)));
+    for (let r = 0; r < rows; r++) {
+      const yy = by + (r * 2.8 + 1) * k;
+      for (let c2 = 0; c2 < 3; c2++) g.fillRect(bx + (0.6 + c2 * 3.2) * k, yy, 2.2 * k, 0.9 * k);
+    }
+    // 城垛（5 个凸起，做满整宽）
+    for (let c2 = 0; c2 < 5; c2++) g.fillRect(bx + c2 * 2 * k, by - 1.6 * k, 1.4 * k, 1.6 * k);
+    // 塔基
+    g.fillStyle = dark; g.fillRect(bx - 0.6 * k, GY - 1.4 * k, bw + 1.2 * k, 1.4 * k);
+  });
+
+  // 草地上的小装饰（花点），让战场不那么空
+  [12, 36, 50, 64, 88].forEach((fx, idx) => {
+    const fy = (SP.SS_GROUND || 50) + 3.2 + (idx % 2) * 3;
+    g.fillStyle = ['#ffd6e4', '#fff2b8', '#ffd6e4', '#d8e8ff', '#fff2b8'][idx];
+    g.beginPath(); g.arc(fx * k, fy * k, Math.max(1.4, 0.55 * k), 0, Math.PI * 2); g.fill();
+    g.fillStyle = 'rgba(255,255,255,.75)';
+    g.beginPath(); g.arc(fx * k, fy * k, Math.max(0.8, 0.24 * k), 0, Math.PI * 2); g.fill();
+  });
+
+  ssBgKey = key;
+  return cv;
+}
+
+/* 画一个小人（头 + 身体 + 眼睛 + 胸口爱心），颜色按阵营 */
+function ssDrawMan(g, k, i, hp, maxHp, dim) {
+  const men = SP.SS_MAN || [{ x: 19, y: 45.8 }, { x: 81, y: 45.8 }];
+  const m = men[i], col = SS_COLORS[i], r = (SP.SS_MAN_R || 4.2) * k;
+  const cx = m.x * k, cy = m.y * k;
+  const GY = (SP.SS_GROUND || 50) * k;
+  g.save();
+  if (dim) g.globalAlpha = 0.45;
+
+  // 影子
+  g.fillStyle = 'rgba(80,60,70,.16)';
+  g.beginPath(); g.ellipse(cx, GY - 0.15 * k, r * 1.0, r * 0.26, 0, 0, Math.PI * 2); g.fill();
+  // 小土堆底座
+  g.fillStyle = 'rgba(126,200,120,.95)';
+  g.beginPath(); g.ellipse(cx, GY - 0.1 * k, r * 0.9, r * 0.22, 0, 0, Math.PI * 2); g.fill();
+
+  // 身体（胖一点才像小人，不然像颗糖）
+  g.fillStyle = col;
+  g.beginPath(); g.ellipse(cx, cy + r * 0.4, r * 0.8, r * 0.7, 0, 0, Math.PI * 2); g.fill();
+  // 头
+  g.beginPath(); g.arc(cx, cy - r * 0.5, r * 0.7, 0, Math.PI * 2); g.fill();
+  // 头顶高光
+  g.fillStyle = 'rgba(255,255,255,.38)';
+  g.beginPath(); g.arc(cx - r * 0.24, cy - r * 0.72, r * 0.2, 0, Math.PI * 2); g.fill();
+
+  // 眼睛（大一点才看得清）
+  g.fillStyle = '#fff';
+  g.beginPath(); g.arc(cx - r * 0.26, cy - r * 0.54, r * 0.19, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.arc(cx + r * 0.26, cy - r * 0.54, r * 0.19, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#3a2b33';
+  g.beginPath(); g.arc(cx - r * 0.24, cy - r * 0.53, r * 0.1, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.arc(cx + r * 0.28, cy - r * 0.53, r * 0.1, 0, Math.PI * 2); g.fill();
+  // 腮红
+  g.fillStyle = 'rgba(255,255,255,.42)';
+  g.beginPath(); g.arc(cx - r * 0.5, cy - r * 0.34, r * 0.13, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.arc(cx + r * 0.5, cy - r * 0.34, r * 0.13, 0, Math.PI * 2); g.fill();
+
+  // 胸口小爱心（白色）
+  g.fillStyle = 'rgba(255,255,255,.92)';
+  const hx = cx, hy = cy + r * 0.38, hs = r * 0.34;
+  g.beginPath();
+  g.moveTo(hx, hy + hs * 0.85);
+  g.bezierCurveTo(hx - hs * 1.5, hy - hs * 0.35, hx - hs * 0.55, hy - hs * 1.2, hx, hy - hs * 0.35);
+  g.bezierCurveTo(hx + hs * 0.55, hy - hs * 1.2, hx + hs * 1.5, hy - hs * 0.35, hx, hy + hs * 0.85);
+  g.fill();
+
+  // 头顶血条（加大，远看也清楚）
+  const bw = r * 2.5, bh = Math.max(3, r * 0.34), bx = cx - bw / 2, by2 = cy - r * 1.75;
+  g.fillStyle = 'rgba(255,255,255,.82)';
+  g.beginPath(); g.roundRect ? g.roundRect(bx, by2, bw, bh, bh / 2) : g.rect(bx, by2, bw, bh); g.fill();
+  const pct = Math.max(0, Math.min(1, hp / maxHp));
+  if (pct > 0) {
+    g.fillStyle = pct > 0.5 ? '#4cd07d' : (pct > 0.25 ? '#ffb340' : '#ff5b5b');
+    g.beginPath(); g.roundRect ? g.roundRect(bx, by2, bw * pct, bh, bh / 2) : g.rect(bx, by2, bw * pct, bh); g.fill();
+  }
+  g.restore();
+}
+
+/* 主绘制：background + 墙 + 小人 + 弹弓 + 瞄准虚线 + 飞行弹丸 */
+function ssPaint(ball, aim, hitFlash) {
+  const fit = ssFit(); if (!fit || !st) return;
+  const { ctx: g, pxW, pxH, k } = fit;
+  g.clearRect(0, 0, pxW, pxH);
+  g.drawImage(ssDrawBg(fit), 0, 0);
+
+  // 掩体墙
+  (st.blocks || []).forEach((b) => {
+    if (!b) return;
+    const alive = b.hp > 0;
+    const x = b.x * k, y = b.y * k, w = b.w * k, h = b.h * k;
+    if (alive) {
+      g.fillStyle = b.side === 0 ? '#e0b79c' : '#b8c8e6';
+      g.fillRect(x, y, w, h);
+      g.fillStyle = 'rgba(255,255,255,.35)';
+      g.fillRect(x, y, w, Math.max(1, h * 0.16));
+      g.strokeStyle = 'rgba(120,90,80,.35)'; g.lineWidth = Math.max(1, 0.18 * k);
+      g.strokeRect(x, y, w, h);
+      g.beginPath(); g.moveTo(x, y + h / 2); g.lineTo(x + w, y + h / 2); g.stroke();
+    } else {
+      g.fillStyle = 'rgba(150,130,130,.16)';     // 已轰塌：留个浅坑痕
+      g.fillRect(x, y + h * 0.55, w, h * 0.45);
+    }
+  });
+
+  const hp = st.hp || [100, 100], maxHp = st.hpMax || 100;
+  const ended = st.winner !== null;
+  ssDrawMan(g, k, 0, hp[0], maxHp, ended && st.winner !== 0);
+  ssDrawMan(g, k, 1, hp[1], maxHp, ended && st.winner !== 1);
+
+  // 弹弓（Y 形）
+  const me = (st.players || []).findIndex((p) => p.isYou);
+  const sling = st.sling || SP.SS_SLING || [{ x: 9, y: 37 }, { x: 91, y: 37 }];
+  [0, 1].forEach((i) => {
+    const s = sling[i], sx = s.x * k, sy = s.y * k;
+    // 轮到谁，谁的弹弓就发光（一眼看出该谁动）
+    if (st.turn === i && st.winner === null) {
+      const halo = g.createRadialGradient(sx, sy - 2 * k, 0, sx, sy - 2 * k, 9 * k);
+      halo.addColorStop(0, 'rgba(255,214,102,.55)');
+      halo.addColorStop(1, 'rgba(255,214,102,0)');
+      g.fillStyle = halo;
+      g.beginPath(); g.arc(sx, sy - 2 * k, 9 * k, 0, Math.PI * 2); g.fill();
+    }
+    g.strokeStyle = '#7a4a2b'; g.lineWidth = Math.max(2.5, 0.75 * k); g.lineCap = 'round';
+    g.beginPath(); g.moveTo(sx, sy + 1.6 * k); g.lineTo(sx, sy - 1.6 * k); g.stroke();
+    g.beginPath(); g.moveTo(sx, sy - 1.6 * k); g.lineTo(sx - 2.2 * k, sy - 4.6 * k); g.stroke();
+    g.beginPath(); g.moveTo(sx, sy - 1.6 * k); g.lineTo(sx + 2.2 * k, sy - 4.6 * k); g.stroke();
+    g.strokeStyle = 'rgba(255,255,255,.85)'; g.lineWidth = Math.max(1.2, 0.28 * k);
+    g.beginPath(); g.moveTo(sx - 2.2 * k, sy - 4.6 * k); g.lineTo(sx + 2.2 * k, sy - 4.6 * k); g.stroke();
+  });
+
+  // 瞄准虚线 + 预判落点（没拖动时给一条淡的「教学线」，一进局就知道该拖多远）
+  const myIdx2 = me >= 0 ? me : -1;
+  const ghost = !aim && myIdx2 >= 0 && st.turn === myIdx2 && st.winner === null && !ssAnim;
+  const aimToDraw = aim || (ghost ? { angle: 45, power: 0.45 } : null);
+  if (aimToDraw && myIdx2 >= 0 && SP.ssSimulate) {
+    const r = SP.ssSimulate(myIdx2, aimToDraw.angle, aimToDraw.power, st.blocks || []);
+    const p = r.path || [];
+    g.save();
+    g.globalAlpha = ghost ? 0.66 : 1;
+    g.setLineDash([Math.max(3, 0.8 * k), Math.max(3, 0.7 * k)]);
+    g.lineWidth = Math.max(1.4, 0.32 * k);
+    g.strokeStyle = 'rgba(255,255,255,.92)';
+    g.beginPath();
+    for (let i = 0; i < p.length; i += 2) {
+      const x = p[i] * k, y = p[i + 1] * k;
+      if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+    }
+    g.stroke();
+    g.setLineDash([]);
+    if (r.hit) {
+      const hx = r.hit.x * k, hy = r.hit.y * k;
+      g.strokeStyle = 'rgba(255,255,255,.95)'; g.lineWidth = Math.max(1.6, 0.35 * k);
+      g.beginPath(); g.arc(hx, hy, 1.6 * k, 0, Math.PI * 2); g.stroke();
+      g.fillStyle = 'rgba(255,255,255,.25)';
+      g.beginPath(); g.arc(hx, hy, 1.1 * k, 0, Math.PI * 2); g.fill();
+    }
+    g.restore();
+  }
+
+  // 飞行中的弹丸
+  if (ball) {
+    const bx = ball.x * k, by = ball.y * k, br = Math.max(2, (SP.SS_R || 1.1) * k);
+    g.save();
+    g.shadowColor = 'rgba(255,255,255,.9)'; g.shadowBlur = br * 2.2;
+    g.fillStyle = ball.by === 1 ? '#5b8ff9' : '#ff5e7e';
+    g.beginPath(); g.arc(bx, by, br, 0, Math.PI * 2); g.fill();
+    g.shadowBlur = 0;
+    g.fillStyle = 'rgba(255,255,255,.85)';
+    g.beginPath(); g.arc(bx - br * 0.3, by - br * 0.3, br * 0.35, 0, Math.PI * 2); g.fill();
+    g.restore();
+  }
+
+  // 命中爆点
+  if (hitFlash && hitFlash.t0) {
+    const age = (performance.now() - hitFlash.t0) / 420;
+    if (age < 1) {
+      const hx = hitFlash.x * k, hy = hitFlash.y * k;
+      g.save();
+      g.globalAlpha = 1 - age;
+      g.strokeStyle = '#fff'; g.lineWidth = Math.max(1.5, 0.45 * k * (1 - age));
+      g.beginPath(); g.arc(hx, hy, (1 + age * 5) * k, 0, Math.PI * 2); g.stroke();
+      g.fillStyle = hitFlash.enemy ? 'rgba(255,120,140,.8)' : 'rgba(255,200,90,.8)';
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + age * 2;
+        const d = (1.5 + age * 5) * k;
+        g.beginPath(); g.arc(hx + Math.cos(a) * d, hy + Math.sin(a) * d, Math.max(1, 0.45 * k * (1 - age)), 0, Math.PI * 2); g.fill();
+      }
+      g.restore();
+      requestAnimationFrame(() => { if (ssAnim === null) ssPaint(null, ssAim, hitFlash); });
+    }
+  }
+}
+
+/* 沿服务端下发的轨迹回放飞行过程 */
+function ssPlayShot(shot) {
+  const path = shot.path || [];
+  const total = path.length / 2;
+  if (total < 2) return;
+  if (ssAnim) cancelAnimationFrame(ssAnim);
+  const myIdx = (st.players || []).findIndex((p) => p.isYou);
+  const dur = Math.max(500, Math.min(1500, total * 9.5));
+  const t0 = performance.now();
+  const flash = shot.hit ? { t0: 0, x: shot.hit.x, y: shot.hit.y, enemy: shot.dmgTo !== undefined && shot.dmgTo !== null && shot.dmgTo !== shot.by } : null;
+  beep(shot.by === myIdx ? 'click' : 'coin');
+
+  const tick = (now) => {
+    const p = Math.min(1, (now - t0) / dur);
+    const idx = p * (total - 1);
+    const i0 = Math.floor(idx), i1 = Math.min(total - 1, i0 + 1), f = idx - i0;
+    const x = path[i0 * 2] + (path[i1 * 2] - path[i0 * 2]) * f;
+    const y = path[i0 * 2 + 1] + (path[i1 * 2 + 1] - path[i0 * 2 + 1]) * f;
+    ssPaint({ x, y, by: shot.by }, null, null);
+    if (p < 1) { ssAnim = requestAnimationFrame(tick); return; }
+    ssAnim = null;
+    if (flash) {
+      flash.t0 = performance.now();
+      if (shot.hit && shot.hit.type === 'man') { beep('win'); }
+      ssPaint(null, null, flash);
+      setTimeout(() => ssPaint(null, ssAim, null), 460);
+    } else {
+      ssPaint(null, ssAim, null);
+    }
+  };
+  ssAnim = requestAnimationFrame(tick);
+}
+
+/* ---------- 拉弓交互：手指朝对方方向拖动，越远越用力 ---------- */
+function ssMyTurn() {
+  if (!st || !st.started || st.winner !== null) return false;
+  const players = st.players || [];
+  const myIdx = players.findIndex((p) => p.isYou);
+  return myIdx >= 0 && players.length >= 2 && myIdx === st.turn;
+}
+function ssAimFromEvent(e) {
+  const c = $('ssCanvas'); if (!c || !st) return;
+  const me = (st.players || []).findIndex((p) => p.isYou);
+  if (me < 0) return;
+  const rect = c.getBoundingClientRect();
+  const wx = ((e.clientX - rect.left) / rect.width) * ssW;
+  const wy = ((e.clientY - rect.top) / rect.height) * ssH;
+  const sl = (st.sling || [{ x: 9, y: 37 }, { x: 91, y: 37 }])[me];
+  const dir = me === 0 ? 1 : -1;
+  const dx = (wx - sl.x) * dir;                 // 朝对方为正
+  const dy = wy - sl.y;                         // 向下为正
+  let ang = Math.atan2(-dy, Math.abs(dx)) * 180 / Math.PI;
+  ang = Math.max(5, Math.min(85, ang));
+  const pw = Math.max(0.06, Math.min(1, Math.hypot(dx, dy) / 34));
+  ssAim = { angle: ang, power: pw };
+  const wrap = $('ssPowerWrap'), fill = $('ssPowerFill');
+  if (wrap) wrap.classList.remove('hidden');
+  if (fill) fill.style.width = Math.round(pw * 100) + '%';
+  ssPaint(null, ssAim, null);
+}
+function ssBindCanvas() {
+  const c = $('ssCanvas'); if (!c) return;
+  c.addEventListener('pointerdown', (e) => {
+    if (!ssMyTurn() || ssAnim) return;
+    ssDrag = true; ssAimFromEvent(e);
+    try { c.setPointerCapture(e.pointerId); } catch (err) {}
+  });
+  c.addEventListener('pointermove', (e) => {
+    if (!ssDrag) return;
+    e.preventDefault(); ssAimFromEvent(e);
+  });
+  const up = () => {
+    if (!ssDrag) return;
+    ssDrag = false;
+    if (ssAim && ssMyTurn()) {
+      beep('click');
+      socket.emit('slingshotAction', { angle: Math.round(ssAim.angle * 10) / 10, power: Math.round(ssAim.power * 100) / 100 });
+    }
+    ssAim = null;
+    const w = $('ssPowerWrap'); if (w) w.classList.add('hidden');
+    ssPaint(null, null, null);
+  };
+  c.addEventListener('pointerup', up);
+  c.addEventListener('pointercancel', () => { ssDrag = false; ssAim = null; const w = $('ssPowerWrap'); if (w) w.classList.add('hidden'); ssPaint(null, null, null); });
+  window.addEventListener('resize', () => { ssFitCache = null; ssBgKey = ''; if (!ssAnim) ssPaint(null, ssAim, null); });
+}
+
+/* ---------- 渲染总入口（每次 state 都会调到这里） ---------- */
+function renderSlingshot() {
+  const s = st; if (!s) return;
+  ssW = s.w || 100; ssH = s.h || 62;
+  $('ssCode').textContent = s.code || S.code || '------';
+  const players = s.players || [];
+  const myIdx = players.findIndex((p) => p.isYou);
+  const ended = s.winner !== null && s.winner !== undefined;
+
+  let txt = '准备中';
+  if (ended) txt = '🏆 ' + (players[s.winner] ? players[s.winner].name : 'TA') + ' 赢啦！';
+  else if (players.length >= 2 && s.started) txt = (players[s.turn] ? players[s.turn].name : 'TA') + ' 的回合';
+  $('ssTurn').textContent = txt;
+
+  // 玩家卡（含血量条）
+  const box = $('ssPlayers'); box.innerHTML = '';
+  players.forEach((p, i) => {
+    const hp = (s.hp && s.hp[i] != null) ? s.hp[i] : (s.hpMax || 100);
+    const pct = Math.max(0, Math.min(100, hp / (s.hpMax || 100) * 100));
+    const d = el('div', 'pbox ss-pbox' + (s.turn === i && !ended ? ' active' : ''));
+    d.innerHTML = `<img class="pav" src="${avatarSrc(p, i)}"><div class="pinfo">
+      <div class="pname">${escapeHtml(p.name)}${p.isYou ? ' <span class="you-tag">你</span>' : ''}</div>
+      <div class="ss-hpbar"><span style="width:${pct}%;background:${SS_COLORS[i]}"></span></div>
+      <div class="pmeta">${hp} 血${p.connected ? '' : ' · 掉线'}</div></div>`;
+    box.appendChild(d);
+  });
+
+  // 日志
+  const lg = $('ssLog');
+  if (lg) {
+    const logs = s.log || [];
+    lg.innerHTML = logs.length ? logs.map((l) => `<div>· ${escapeHtml(l.msg || '')}</div>`).join('')
+      : '<div class="gd-empty">还没人出手，拉弓试试～</div>';
+  }
+
+  // 新的一发 → 播放回放动画
+  const sh = s.lastShot;
+  if (sh && sh.seq !== ssLastSeq) {
+    ssLastSeq = sh.seq;
+    ssPlayShot(sh);
+  } else if (!ssAnim) {
+    ssPaint(null, ssAim, null);
+  }
+  if (!ssBuilt) { ssBuilt = true; ssBindCanvas(); }
+
+  // 胜负
+  if (ended) {
+    const wk = s.winner + ':' + s.shots;
+    if (wk !== ssWinnerKey) {
+      ssWinnerKey = wk;
+      confetti(80);
+      toast('🏆 ' + (players[s.winner] ? players[s.winner].name : 'TA') + ' 把对面打空啦！');
+    }
+  }
+
+  // 提示条
+  const hint = $('ssHint');
+  if (hint) {
+    if (ended) hint.textContent = '本局结束～打开设置可以再来一局';
+    else if (players.length < 2) hint.textContent = '等对方进来…';
+    else if (s.turn === myIdx) hint.textContent = '轮到你了：手指朝对方方向拖动 → 松手发射';
+    else hint.textContent = '对方正在瞄准…（你可以先比个心）';
+  }
+
+  paintGdIcons($('slingshot'));
 }
 
 /* ---------- 环形棋盘：只建一次 ---------- */
@@ -1548,6 +2016,10 @@ $('c4InteractBtns') && $('c4InteractBtns').addEventListener('click', (e) => {
   const b = e.target.closest('button'); if (!b) return;
   beep('click'); socket.emit('interact', { kind: b.dataset.k });
 });
+$('ssInteractBtns') && $('ssInteractBtns').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  beep('click'); socket.emit('interact', { kind: b.dataset.k });
+});
 $('moneyOpts') && $('moneyOpts').addEventListener('click', (e) => {
   const b = e.target.closest('button'); if (!b) return;
   socket.emit('interact', { kind: 'money', amount: Number(b.dataset.v) });
@@ -1587,6 +2059,11 @@ $('gdExitBtn') && $('gdExitBtn').addEventListener('click', () => {
 });
 $('c4SettingsBtn') && $('c4SettingsBtn').addEventListener('click', () => { beep('click'); openSettings(); });
 $('c4ExitBtn') && $('c4ExitBtn').addEventListener('click', () => {
+  if (!window.confirm('返回主菜单？会解散当前房间，对方也会回到大厅。')) return;
+  doLeave();
+});
+$('ssSettingsBtn') && $('ssSettingsBtn').addEventListener('click', () => { beep('click'); openSettings(); });
+$('ssExitBtn') && $('ssExitBtn').addEventListener('click', () => {
   if (!window.confirm('返回主菜单？会解散当前房间，对方也会回到大厅。')) return;
   doLeave();
 });
