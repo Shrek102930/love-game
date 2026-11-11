@@ -1863,4 +1863,4 @@ server.on('error', (e) => {
   if (e.code === 'EADDRINUSE') console.error(`⚠️ 端口 ${PORT} 已被占用（可能已有实例在运行），本实例退出。`);
   else console.error('服务器错误:', e);
 });
-server.listen(PORT, () => console.log(`💕 两个人的游戏屋 v4.0 已启动: http://localhost:${PORT}`));
+server.listen(PORT, () => console.log(`💕 两个人的游戏屋 v4.1 已启动: http://localhost:${PORT}`));

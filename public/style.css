@@ -729,3 +729,18 @@ h2{font-size:18px;margin:0 0 8px}
   .gd-actions button{font-size:16px}
   .gd-actions button span{font-size:8px}
 }
+
+/* ===== v4.1 全站 emoji → 内联 SVG =====
+ * 渲染层把文本里的 emoji 换成 .eico（1em 彩色 SVG），跟随父级字号，
+ * 天然适配按钮 / 标题 / 正文 / 大字场景，任何手机都不再出现空心豆腐块。 */
+.eico{display:inline-block;width:1em;height:1em;line-height:1;vertical-align:-0.14em;
+  flex:none;pointer-events:none}
+.eico svg{display:block;width:100%;height:100%}
+.over-emoji .eico,.center-heart .eico{vertical-align:middle}
+/* space-between 的 flex 行：emoji 拆成独立 span 后会把文字挤到中间，
+   改为显式左对齐 + 末尾说明靠右，视觉与原版一致。 */
+.set-row{justify-content:flex-start}
+.set-row > span:last-child{margin-left:auto}
+/* 顶栏图标按钮与面板 summary 内的小图标保持居中 */
+.icon-btn .eico{vertical-align:middle}
+.gd-tip-ico .eico,.gd-stat-ico .eico{vertical-align:middle}

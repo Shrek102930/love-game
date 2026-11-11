@@ -1389,5 +1389,171 @@ $('gdChatSend') && $('gdChatSend').addEventListener('click', () => {
 });
 $('gdChatInput') && $('gdChatInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('gdChatSend').click(); });
 
+/* ==================================================================
+ * v4.1 全站 emoji → 内联 SVG（豆腐块兜底）
+ * 真机有彩色 emoji 字体，但无头浏览器 / 部分安卓机缺字体会显示空心方框。
+ * 这里只在「渲染层」把文本节点里的 emoji 换成 1em 彩色内联 SVG：
+ *  - 首次全量扫描 body：覆盖大厅 / 等待 / 顶栏 / 面板 / 设置 / 弹窗 / 结束屏
+ *  - MutationObserver + rAF 批量：覆盖 toast / 日志 / 弹窗 / state 重绘等动态插入
+ *  - 只处理文本节点，中文文案、HTML 结构、业务逻辑、测试断言全部原样保留
+ *  - 未收录的 emoji 统一兜底成小星星；© / ← / · / ¥ 等普通符号不在范围内，不误伤
+ * ================================================================== */
+const EMOJI_ICONS = {
+  heart:       '<path d="M12 21C3 14 2 7 7 5c3-1.2 5 1 5 1s2-2.2 5-1c5 2 4 9-5 16z" fill="#ff6b8f"/>',
+  heartbroken: '<path d="M12 21C3 14 2 7 7 5c3-1.2 5 1 5 1s2-2.2 5-1c5 2 4 9-5 16z" fill="#c9a3b4"/><path d="M12 7l-2 4h3l-2.5 5" stroke="#fff" stroke-width="1.5" fill="none" stroke-linejoin="round"/>',
+  star:        '<path d="M12 2l3 6.5 7 .9-5 4.8 1.3 7L12 18l-6.3 3.2L7 14.2l-5-4.8 7-.9z" fill="#ffd35e"/>',
+  sparkle:     '<path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8z" fill="#ffd35e"/><circle cx="19" cy="18.5" r="2" fill="#ffb0c8"/>',
+  dice:        '<rect x="3" y="3" width="18" height="18" rx="4" fill="#fff" stroke="#e07a8f" stroke-width="1.6"/><g fill="#e8536f"><circle cx="8" cy="8" r="1.5"/><circle cx="16" cy="8" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="8" cy="16" r="1.5"/><circle cx="16" cy="16" r="1.5"/></g>',
+  gamepad:     '<rect x="2" y="7" width="20" height="11" rx="5" fill="#a98ae8"/><path d="M7 10.5v4M5 12.5h4" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/><circle cx="16" cy="11.5" r="1.3" fill="#fff"/><circle cx="18.5" cy="14" r="1.3" fill="#fff"/>',
+  flag:        '<path d="M5 3v18" stroke="#8a7186" stroke-width="2" stroke-linecap="round"/><path d="M6 4h12v8H6z" fill="#f6dce8"/><path d="M6 4h4v4H6zM14 8h4v4h-4z" fill="#e8536f"/>',
+  city:        '<rect x="3" y="9" width="6" height="12" rx="1" fill="#8fb8e8"/><rect x="10" y="3" width="7" height="18" rx="1" fill="#5b8ff9"/><rect x="18" y="11" width="4" height="10" rx="1" fill="#a9c8f0"/><g fill="#fff" opacity=".85"><rect x="11.5" y="6" width="1.6" height="1.6"/><rect x="14.5" y="6" width="1.6" height="1.6"/><rect x="11.5" y="10" width="1.6" height="1.6"/><rect x="14.5" y="10" width="1.6" height="1.6"/><rect x="4.5" y="12" width="1.6" height="1.6"/></g>',
+  bag:         '<rect x="5" y="7" width="14" height="14" rx="4" fill="#ffb36b"/><path d="M9 7V5a3 3 0 016 0v2" fill="none" stroke="#d9832f" stroke-width="2"/><rect x="9" y="13" width="6" height="5" rx="1.5" fill="#fff3d6"/>',
+  swords:      '<path d="M4 3l13 13M20 3L7 16" stroke="#9aa7bd" stroke-width="2.4" stroke-linecap="round"/><path d="M3 8l5-5M21 8l-5-5" stroke="#c04a72" stroke-width="2" stroke-linecap="round"/><circle cx="17.5" cy="18" r="1.8" fill="#ffd35e"/>',
+  handshake:   '<path d="M2 12l5-4 4 3 2-2 4 3 5-4-2 9H4z" fill="#ffd0a8" stroke="#e09a63" stroke-width="1.2" stroke-linejoin="round"/>',
+  turtle:      '<ellipse cx="11" cy="13" rx="8" ry="6" fill="#6ccb7d"/><circle cx="20" cy="11" r="3" fill="#8fe0a0"/><circle cx="20.7" cy="10.4" r=".7" fill="#3d7a4d"/><path d="M6 18v2M16 18v2" stroke="#4f9e5f" stroke-width="2" stroke-linecap="round"/>',
+  balance:     '<path d="M12 3v17M6 20h12M4 7h16" stroke="#a98ae8" stroke-width="1.8" stroke-linecap="round"/><path d="M4 7l-3 6h6zM20 7l-3 6h6z" fill="#c9b3f0"/><circle cx="12" cy="4" r="1.8" fill="#8a6fd0"/>',
+  bolt:        '<path d="M13 2L5 13h6l-1 9 9-12h-6z" fill="#ffc93c"/>',
+  balloon:     '<ellipse cx="12" cy="9" rx="6.5" ry="7.5" fill="#ff8fa8"/><path d="M12 16.5v2M10 21l2-2 2 2" stroke="#c04a72" stroke-width="1.3" fill="none"/>',
+  clipboard:   '<rect x="4" y="4" width="16" height="17" rx="2.5" fill="#fff" stroke="#a98ae8" stroke-width="1.6"/><rect x="8" y="2" width="8" height="4" rx="1.5" fill="#a98ae8"/><path d="M8 11h8M8 15h8" stroke="#c9b3f0" stroke-width="1.6" stroke-linecap="round"/>',
+  chat:        '<rect x="3" y="4" width="18" height="12" rx="4" fill="#8fb8e8"/><path d="M8 16l-1 4 5-4z" fill="#8fb8e8"/>',
+  sound:       '<path d="M4 9h4l5-4v14l-5-4H4z" fill="#5b8ff9"/><path d="M16 8a6 6 0 010 8M19 5a10 10 0 010 14" stroke="#5b8ff9" stroke-width="1.8" fill="none" stroke-linecap="round"/>',
+  mute:        '<path d="M4 9h4l5-4v14l-5-4H4z" fill="#9aa7bd"/><path d="M17 9l5 6M22 9l-5 6" stroke="#e8536f" stroke-width="2" stroke-linecap="round"/>',
+  gear:        '<path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2" stroke="#9aa7bd" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="12" r="4.5" fill="#c9d2df"/>',
+  home:        '<path d="M3 11l9-8 9 8" fill="none" stroke="#e07a8f" stroke-width="2" stroke-linecap="round"/><path d="M5 10v11h14V10z" fill="#ffc2d2"/><rect x="10" y="14" width="4" height="7" fill="#fff"/>',
+  hotel:       '<rect x="4" y="3" width="16" height="18" rx="2" fill="#ffb36b"/><text x="12" y="12.5" font-size="9" font-weight="800" text-anchor="middle" fill="#fff">H</text><rect x="9" y="15" width="6" height="6" fill="#fff3d6"/>',
+  scroll:      '<rect x="5" y="3" width="14" height="18" rx="2" fill="#fff6e0" stroke="#d9a066" stroke-width="1.5"/><path d="M8 8h8M8 12h8M8 16h5" stroke="#d9a066" stroke-width="1.3" stroke-linecap="round"/>',
+  letter:      '<rect x="2.5" y="6" width="19" height="13" rx="2.5" fill="#fff" stroke="#e07a8f" stroke-width="1.7"/><path d="M3 7.5L12 14l9-6.5" fill="none" stroke="#e07a8f" stroke-width="1.7"/>',
+  picture:     '<rect x="3" y="4" width="18" height="16" rx="2" fill="#fff" stroke="#a98ae8" stroke-width="1.6"/><circle cx="8" cy="9" r="2" fill="#ffd35e"/><path d="M4 18l6-6 4 4 3-3 4 5z" fill="#8fd0a8"/>',
+  reset:       '<path d="M19 12A7 7 0 1112 5a7 7 0 016.5 4.5" fill="none" stroke="#c98a3e" stroke-width="2.2" stroke-linecap="round"/><path d="M18.5 4v5h-5z" fill="#c98a3e"/>',
+  swirl:       '<path d="M12 4a8 8 0 108 8 6 6 0 01-6-6 4 4 0 00-4 4" fill="none" stroke="#a05ad8" stroke-width="2" stroke-linecap="round"/>',
+  rail:        '<path d="M7 3l-2 18M17 3l2 18" stroke="#a98ae8" stroke-width="2"/><path d="M4 8h16M3.5 13h17M3 18h18" stroke="#c9b3f0" stroke-width="2"/>',
+  bank:        '<path d="M2 9l10-6 10 6z" fill="#f0b26b"/><rect x="4" y="10" width="16" height="2" fill="#d99a4a"/><path d="M5 13v7M10 13v7M14 13v7M19 13v7" stroke="#d99a4a" stroke-width="2"/><rect x="3" y="20" width="18" height="2" rx="1" fill="#d99a4a"/>',
+  card:        '<rect x="2" y="5" width="20" height="14" rx="2.5" fill="#8fb8e8"/><rect x="2" y="8" width="20" height="3" fill="#5b8ff9"/><rect x="5" y="14" width="6" height="2" rx="1" fill="#fff"/>',
+  car:         '<path d="M3 14l2-6h14l2 6v4H3z" fill="#ff8fa8"/><path d="M6 9l1.5-3h9L18 9z" fill="#c9e4f5"/><circle cx="7" cy="18" r="2" fill="#5a5a6e"/><circle cx="17" cy="18" r="2" fill="#5a5a6e"/>',
+  theater:     '<path d="M4 5h16v7a8 8 0 01-16 0z" fill="#a98ae8"/><circle cx="9" cy="10" r="1.4" fill="#fff"/><circle cx="15" cy="10" r="1.4" fill="#fff"/><path d="M9 15q3 2 6 0" stroke="#fff" stroke-width="1.4" fill="none" stroke-linecap="round"/>',
+  party:       '<path d="M4 20L14 6l4 4L6 21z" fill="#ffb36b"/><path d="M15 3l1 2 2-1-1 2 2 1M19 10l1 2M10 3l1 2" stroke="#ff6b8f" stroke-width="1.6" fill="none" stroke-linecap="round"/>',
+  camera:      '<rect x="2" y="7" width="20" height="13" rx="2.5" fill="#a98ae8"/><circle cx="12" cy="13.5" r="4" fill="#fff"/><circle cx="12" cy="13.5" r="2.3" fill="#8fb8e8"/><rect x="8" y="4.5" width="5" height="3" rx="1" fill="#a98ae8"/>',
+  coin:        '<circle cx="12" cy="12" r="9.5" fill="#f7c948" stroke="#e0a92f" stroke-width="1.5"/><circle cx="12" cy="12" r="6.5" fill="none" stroke="#fff0b8" stroke-width="1.2"/><text x="12" y="16" font-size="11" font-weight="800" text-anchor="middle" fill="#a9701a">¥</text>',
+  check:       '<circle cx="12" cy="12" r="9" fill="#4ec9a5"/><path d="M7.5 12.5l3 3 6-6.5" stroke="#fff" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>',
+  warn:        '<path d="M12 3l10 18H2z" fill="#ffc93c" stroke="#e0a92f" stroke-width="1"/><path d="M12 9v6M12 17.5v1.5" stroke="#8a5a12" stroke-width="2" stroke-linecap="round"/>',
+  seed:        '<ellipse cx="12" cy="15" rx="6" ry="5" fill="#a97c52"/><path d="M9 12q3-4 6 0" fill="#c99a6a"/>',
+  sprout:      '<path d="M12 21v-8" stroke="#4faa63" stroke-width="2"/><path d="M12 15c-4 0-5-5-2-6 1 2 2 2 2 2M12 14c4 0 5-4 2-5-1 2-2 2-2 2" fill="#6ccb7d"/>',
+  flower:      '<path d="M12 21v-8" stroke="#4faa63" stroke-width="2"/><path d="M12 13c-4 0-5-6-2-7 1 2 2 3 2 3s1-1 2-3c3 1 2 7-2 7" fill="#ff8fa8"/>',
+  bouquet:     '<path d="M12 21v-9M8 21q1-6 4-8M16 21q-1-6-4-8" stroke="#4faa63" stroke-width="1.6" fill="none"/><circle cx="8" cy="8" r="3" fill="#ff8fa8"/><circle cx="16" cy="8" r="3" fill="#ffd873"/><circle cx="12" cy="5.5" r="3.2" fill="#e8536f"/>',
+  tree:        '<rect x="10.5" y="14" width="3" height="8" rx="1" fill="#a9703a"/><circle cx="12" cy="10" r="7" fill="#6ccb7d"/><circle cx="8.5" cy="12" r="4.2" fill="#57bb6c"/><circle cx="15.5" cy="12" r="4.2" fill="#4faa63"/>',
+  pin:         '<path d="M12 2a7 7 0 00-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 00-7-7z" fill="#e8536f"/><circle cx="12" cy="9" r="2.5" fill="#fff"/>',
+  lock:        '<rect x="5" y="10" width="14" height="11" rx="2.5" fill="#a98ae8"/><path d="M8 10V7a4 4 0 018 0v3" fill="none" stroke="#7a5fb0" stroke-width="2"/>',
+  question:    '<circle cx="12" cy="12" r="9" fill="#a98ae8"/><path d="M9.5 9a2.5 2.5 0 115 0c0 2-2.5 2.5-2.5 4.5" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/><circle cx="12" cy="17.5" r="1.2" fill="#fff"/>',
+  station:     '<rect x="4" y="4" width="16" height="13" rx="3" fill="#8fb8e8"/><rect x="7" y="8" width="10" height="5" rx="1" fill="#fff"/><circle cx="8" cy="18" r="1.6" fill="#5a5a6e"/><circle cx="16" cy="18" r="1.6" fill="#5a5a6e"/>',
+  bulb:        '<circle cx="12" cy="9" r="6" fill="#ffd35e"/><rect x="9" y="15" width="6" height="3" rx="1" fill="#c9d2df"/><path d="M10 20h4" stroke="#c9d2df" stroke-width="2" stroke-linecap="round"/>',
+  shield:      '<path d="M12 2l8 3v7c0 5-4 8-8 10-4-2-8-5-8-10V5z" fill="#8fb8e8"/><path d="M8 12l2.5 2.5L16 9" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/>',
+  offline:     '<rect x="7" y="2" width="10" height="18" rx="2.5" fill="#c9d2df"/><path d="M4 4l16 16" stroke="#e8536f" stroke-width="2" stroke-linecap="round"/>',
+  dot:         '<circle cx="12" cy="12" r="8" fill="#4ec9a5"/>',
+  hourglass:   '<path d="M6 3h12M6 21h12M7 3c0 5 5 6 5 9s-5 4-5 9M17 3c0 5-5 6-5 9s5 4 5 9" fill="none" stroke="#d9a066" stroke-width="1.8" stroke-linecap="round"/>',
+  foot:        '<ellipse cx="9" cy="9" rx="3" ry="4.5" fill="#ffb0c8"/><ellipse cx="16" cy="15" rx="3" ry="4.5" fill="#ffb0c8"/><circle cx="7" cy="4" r="1.2" fill="#ffb0c8"/><circle cx="10" cy="3.5" r="1.2" fill="#ffb0c8"/>',
+  hammer:      '<path d="M3 21l9-9" stroke="#a9703a" stroke-width="3" stroke-linecap="round"/><path d="M11 4l9 9-4 4-9-9z" fill="#9aa7bd"/>',
+  brain:       '<circle cx="12" cy="11" r="8" fill="#ffb0c8"/><path d="M12 3v16M5 9c3 1 4 3 4 5M19 9c-3 1-4 3-4 5" stroke="#e8536f" stroke-width="1.5" fill="none"/>',
+  wheel:       '<circle cx="12" cy="11" r="8" fill="none" stroke="#a98ae8" stroke-width="1.6"/><path d="M12 3v16M4 11h16M6 5l12 12M18 5L6 17" stroke="#c9b3f0" stroke-width="1.2"/><circle cx="12" cy="11" r="1.8" fill="#e8536f"/><circle cx="12" cy="3.5" r="1.6" fill="#ffd35e"/><circle cx="4" cy="11" r="1.6" fill="#8fb8e8"/>',
+  trophy:      '<path d="M7 3h10v6a5 5 0 01-10 0z" fill="#ffd35e"/><path d="M7 5H4v2a4 4 0 004 4M17 5h3v2a4 4 0 01-4 4" fill="none" stroke="#e0a92f" stroke-width="1.8"/><path d="M12 14v4M8 20h8" stroke="#e0a92f" stroke-width="2" stroke-linecap="round"/>',
+  sad:         '<circle cx="12" cy="12" r="9" fill="#ffd35e"/><circle cx="9" cy="10" r="1.5" fill="#8a5a12"/><circle cx="15" cy="10" r="1.5" fill="#8a5a12"/><path d="M9 16q3-2 6 0" stroke="#8a5a12" stroke-width="1.6" fill="none" stroke-linecap="round"/>',
+  fist:        '<path d="M8 11V6.5a1.5 1.5 0 013 0V10m0 0V5.5a1.5 1.5 0 013 0V10m0 0V7a1.5 1.5 0 013 0v6c0 4-2.6 7-6.5 7-3 0-4.5-1.6-6-4L3 12.5a1.6 1.6 0 012.6-1.8L8 13" fill="#ffd9a8" stroke="#d99a5a" stroke-width="1.2" stroke-linejoin="round"/>',
+  poke:        '<path d="M4 12h10M11 8l4 4-4 4" fill="none" stroke="#5b8ff9" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="19" cy="12" r="2.6" fill="#a98ae8"/>',
+  gift:        '<rect x="3.5" y="9" width="17" height="12" rx="1.8" fill="#ff8fa8"/><rect x="3" y="7" width="18" height="4" rx="1.5" fill="#e8536f"/><rect x="10.5" y="7" width="3" height="14" fill="#fff0b8"/><path d="M12 7Q7 7 7 4.5 7 2.5 9.5 3.5 11 4 12 7Z" fill="#ffd873"/><path d="M12 7q5 0 5-2.5 0-2-2.5-1-1.5.5-2.5 3.5Z" fill="#ffd873"/>',
+  calendar:    '<rect x="3" y="5" width="18" height="16" rx="2.5" fill="#fff" stroke="#e07a8f" stroke-width="1.8"/><rect x="3" y="5" width="18" height="5" rx="2.5" fill="#ff8fa8"/><rect x="7" y="2.5" width="2" height="5" rx="1" fill="#c04a72"/><rect x="15" y="2.5" width="2" height="5" rx="1" fill="#c04a72"/><path d="M7.5 15.5L10 18l6.5-6" fill="none" stroke="#4ec9a5" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>',
+  drop:        '<path d="M12 2C8 8 6 11 6 14a6 6 0 0012 0c0-3-2-6-6-12z" fill="#8fd0f7"/>',
+  bench:       '<rect x="4" y="12" width="16" height="3.5" rx="1.5" fill="#b9763f"/><rect x="4" y="16" width="16" height="3" rx="1.5" fill="#cf8b52"/><rect x="6" y="19" width="2" height="3" fill="#8a5530"/><rect x="16" y="19" width="2" height="3" fill="#8a5530"/><rect x="3" y="7" width="18" height="3.5" rx="1.5" fill="#a9683a"/>',
+};
+/* emoji(去变体选择符后) → 图标名；未列出的统一用 star 兜底 */
+const EMOJI_MAP = {
+  '💕':'heart','💗':'heart','💞':'heart','💔':'heartbroken','❤':'heart','💖':'heart','💘':'heart','💝':'heart',
+  '🎮':'gamepad','🎲':'dice','🎯':'gamepad','🕹':'gamepad',
+  '🏙':'city','🏫':'bag','🎒':'bag','🏢':'city','🌆':'city',
+  '⚔':'swords','🏁':'flag','🤝':'handshake','🐢':'turtle','⚖':'balance','⚡':'bolt','✨':'sparkle',
+  '🎈':'balloon','📋':'clipboard','💬':'chat','💭':'chat','🔊':'sound','🔇':'mute','🔉':'sound','📢':'sound',
+  '⚙':'gear','🏠':'home','🏨':'hotel','🏡':'home','📜':'scroll','💌':'letter','✉':'letter','📨':'letter',
+  '🖼':'picture','🖼️':'picture','🖼':'picture','📷':'camera','📸':'camera',
+  '🔄':'reset','🔃':'reset','🔁':'reset','🌀':'swirl','🛤':'rail','🚧':'rail',
+  '🏦':'bank','💳':'card','💰':'coin','🪙':'coin','💸':'coin','💵':'coin','💴':'coin',
+  '🚗':'car','🚔':'car','🚙':'car','🚕':'car','🚌':'station',
+  '🎭':'theater','🎉':'party','🎊':'party','🥳':'party','🏆':'trophy','🥇':'trophy',
+  '✅':'check','✔':'check','☑':'check','❌':'warn','❎':'warn',
+  '⚠':'warn','❓':'question','❔':'question','⭐':'star','🌟':'star','💫':'star',
+  '🌰':'seed','🌱':'sprout','🌿':'sprout','🌷':'flower','🌸':'flower','🌹':'flower','🌻':'flower','💐':'bouquet','🌳':'tree','🌲':'tree','🪴':'sprout',
+  '📍':'pin','🔒':'lock','🔓':'lock','🗝':'lock','🚉':'station','🚂':'station','💡':'bulb',
+  '🛡':'shield','📴':'offline','🟢':'dot','🔴':'dot','⏳':'hourglass','⌛':'hourglass',
+  '👣':'foot','🔨':'hammer','🧠':'brain','🎡':'wheel','✊':'fist','🤛':'fist','🤜':'fist','👉':'poke','👈':'poke',
+  '🥺':'sad','😢':'sad','😭':'sad','😍':'heart','😘':'heart','🥰':'heart',
+  '📅':'calendar','🗓':'calendar','💧':'drop','🚿':'drop','💦':'drop','🪑':'bench','🛋':'bench',
+  '🏁':'flag','🚩':'flag','🎁':'gift','🎀':'gift','💳':'card','🧺':'bench',
+};
+/* 码点范围匹配（避开 © ® ™ ← → · ¥ 等普通符号），可选变体选择符。
+ * test 用不带 g 的独立对象，exec 用带 g 的对象，避免共享 lastIndex 造成漏替换。 */
+const EMOJI_SRC = '[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{2300}-\u{23FF}]\uFE0F?';
+const EMOJI_RE = new RegExp(EMOJI_SRC, 'gu');
+const EMOJI_TEST = new RegExp('(?:' + EMOJI_SRC + ')', 'u');
+const EM_SKIP = { SCRIPT:1, STYLE:1, TEXTAREA:1, INPUT:1, SELECT:1, OPTION:1, SVG:1, NOSCRIPT:1, IFRAME:1 };
+function emIconName(ch) {
+  const k = ch.replace(/\uFE0F/g, '');
+  return EMOJI_MAP[k] || EMOJI_MAP[ch] || 'star';
+}
+function emReplaceText(node) {
+  const t = node.nodeValue;
+  if (!t || !EMOJI_TEST.test(t)) return;
+  EMOJI_RE.lastIndex = 0;
+  const frag = document.createDocumentFragment();
+  let last = 0, m;
+  while ((m = EMOJI_RE.exec(t))) {
+    if (m.index > last) frag.appendChild(document.createTextNode(t.slice(last, m.index)));
+    const span = document.createElement('span');
+    span.className = 'eico';
+    span.setAttribute('aria-hidden', 'true');
+    span.innerHTML = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">${EMOJI_ICONS[emIconName(m[0])]}</svg>`;
+    frag.appendChild(span);
+    last = m.index + m[0].length;
+  }
+  if (last < t.length) frag.appendChild(document.createTextNode(t.slice(last)));
+  if (node.parentNode) node.parentNode.replaceChild(frag, node);
+}
+function emScan(root) {
+  if (!root) return;
+  if (root.nodeType === 3) { emReplaceText(root); return; }
+  if (root.nodeType !== 1) return;
+  if (root.classList && root.classList.contains('eico')) return;   // 自己生成的，跳过
+  if (EM_SKIP[root.nodeName.toUpperCase()]) return;
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(n) {
+      let p = n.parentNode;
+      while (p) { if (EM_SKIP[p.nodeName.toUpperCase()]) return NodeFilter.FILTER_REJECT; p = p.parentNode; }
+      if (!n.nodeValue) return NodeFilter.FILTER_REJECT;
+      return EMOJI_TEST.test(n.nodeValue) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+    },
+  });
+  const list = [];
+  while (w.nextNode()) list.push(w.currentNode);
+  for (let i = 0; i < list.length; i++) emReplaceText(list[i]);
+}
+/* 动态内容：MutationObserver 回调内「同步」处理。
+ * 不用 rAF/定时器批量——后台标签页会被节流暂停，导致动态文本漏替换（等待页实测踩到）。
+ * 用 disconnect → 同步替换 → observe 包裹，避免自己的 replaceChild 再次触发形成循环。 */
+try {
+  emScan(document.body);                       // 首次：静态 DOM 全量
+  const EM_OPTS = { childList: true, subtree: true, characterData: true };
+  const emMo = new MutationObserver((muts) => {
+    emMo.disconnect();                         // 防止下方 DOM 改动自触发
+    try {
+      for (let i = 0; i < muts.length; i++) {
+        const m = muts[i];
+        if (m.type === 'childList') {
+          for (let j = 0; j < m.addedNodes.length; j++) {
+            const n = m.addedNodes[j];
+            if (n.nodeType === 1 || n.nodeType === 3) emScan(n);
+          }
+        } else if (m.type === 'characterData') emScan(m.target);
+      }
+    } finally { emMo.observe(document.body, EM_OPTS); }
+  });
+  emMo.observe(document.body, EM_OPTS);
+} catch (e) { console.warn('[emoji] init skipped', e.message); }
+
 window.addEventListener('error', (e) => { console.warn('[game] error', e.message); });
 })();
