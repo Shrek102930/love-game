@@ -450,6 +450,7 @@ function buildGame(room) {
     diceId: 0, pending: null, jackpot: 0, innerRuns: 0,
     mini: null, auction: null, lastEvent: null, eventFx: null, buyTile: null, buyPrice: 0,
     log: [], winner: null, coop: null, moveSteps: [], passedGo: false,
+    endReason: null, endDetail: null,   // v4.3：结构化获胜原因（结束屏解释「为什么赢」）
     moveId: 0, fxId: 0,
   };
   room.players.forEach((p, i) => {
@@ -512,6 +513,7 @@ function publicState(room, forId) {
       current: g.current, phase: g.phase, dice: g.dice,
       lastEvent: g.lastEvent, eventFx: g.eventFx, log: g.log.slice(0, 10),
       winner: g.winner, coop: g.coop, salary: g.salary, heart: g.heart,
+      endReason: g.endReason || null, endDetail: g.endDetail || null,
       rounds: g.rounds, maxRounds: g.maxRounds, targetLaps: g.targetLaps,
       coopTarget: g.coopTarget, heartTarget: g.heartTarget,
       tileDyn: td, moveSteps: g.moveSteps, passedGo: g.passedGo,
@@ -1286,7 +1288,7 @@ function checkEnd(room) {
   if (g.mode === 'race') {
     const leader = room.players.find((p) => !p.bankrupt && p.laps >= g.targetLaps);
     if (leader) return endRace(room, leader);
-    if (alive.length === 1) return endRace(room, alive[0]);
+    if (alive.length === 1) return endRace(room, alive[0], true);
     return;
   }
   if (g.mode === 'coop') {
@@ -1296,32 +1298,54 @@ function checkEnd(room) {
   }
   if (alive.length === 1) {
     g.phase = 'ended'; g.winner = alive[0].id;
+    const out = room.players.find((p) => p.bankrupt);
+    g.endReason = `${out ? out.name : '对手'} 资金告罄，破产出局`;
+    g.endDetail = `场上只剩 ${alive[0].name} · 终局净资产 ${netWorth(room, alive[0])}`;
     pushLog(room, `🎉 ${alive[0].name} 获胜！`);
     setFx(room, 'win', `${alive[0].name} 获胜！`);
   }
 }
-function endRace(room, w) {
+function endRace(room, w, byBankrupt) {
   const g = room.game; g.phase = 'ended'; g.winner = w.id;
+  g.endReason = byBankrupt ? `对手全部破产，${w.name} 赢得竞速` : `${w.name} 率先跑满 ${g.targetLaps} 圈`;
+  g.endDetail = `圈数 ${room.players.map((p) => p.laps).join(' : ')} / 目标 ${g.targetLaps}`;
   pushLog(room, `🏁 ${w.name} 率先跑满 ${g.targetLaps} 圈，赢得竞速！`);
   setFx(room, 'win', `${w.name} 竞速获胜！`);
 }
 function endCoop(room, ok, why) {
   const g = room.game; g.phase = 'ended'; g.coop = ok; g.winner = ok ? room.players[0].id : null;
+  if (ok) {
+    g.endReason = why === 'heart' ? `默契值攒满 ${g.heartTarget} 点，共同获胜` : `两人合计净资产达到 ${g.coopTarget}`;
+    g.endDetail = why === 'heart' ? `默契 ${g.heart}/${g.heartTarget} 💗` : `合计净资产 ${room.players.reduce((s, p) => s + netWorth(room, p), 0)}`;
+  } else {
+    const out = room.players.find((p) => p.bankrupt);
+    g.endReason = `${out ? out.name : '有人'} 资金告罄破产，合作失败`;
+    g.endDetail = '下次一起盯紧现金流，再来一局～';
+  }
   pushLog(room, ok ? (why === 'heart' ? '💗 默契值满格，心跳模式共同获胜！' : '🎉 合作成功，共同获胜！') : '💔 合作失败，有人破产了…');
   setFx(room, ok ? 'win' : 'lose', ok ? (why === 'heart' ? '默契满格 💗' : '合作成功 💕') : '合作失败 💔');
 }
 function endByRounds(room) {
   const g = room.game; g.phase = 'ended';
+  const netLine = room.players.map((p) => `${p.name} ${netWorth(room, p)}`).join(' : ');
   if (g.mode === 'heart' || g.mode === 'coop') {
     const alive = room.players.filter((p) => !p.bankrupt);
-    return endCoop(room, alive.length === room.players.length && (g.mode === 'heart' ? g.heart >= g.heartTarget : alive.reduce((s, p) => s + netWorth(room, p), 0) >= g.coopTarget), g.mode === 'heart' ? 'heart' : '');
+    endCoop(room, alive.length === room.players.length && (g.mode === 'heart' ? g.heart >= g.heartTarget : alive.reduce((s, p) => s + netWorth(room, p), 0) >= g.coopTarget), g.mode === 'heart' ? 'heart' : '');
+    g.endReason = `第 ${g.maxRounds} 回合结束，${g.coop === true ? '达标共同获胜' : '未达标，合作失败'}`;
+    g.endDetail = `合计净资产 ${room.players.reduce((s, p) => s + netWorth(room, p), 0)} · 净资产 ${netLine}`;
+    return;
   }
   if (g.mode === 'race') {
     const sorted = [...room.players].sort((a, b) => b.laps - a.laps || netWorth(room, b) - netWorth(room, a));
-    return endRace(room, sorted[0]);
+    endRace(room, sorted[0]);
+    g.endReason = `第 ${g.maxRounds} 回合结束，按圈数与净资产结算`;
+    g.endDetail = `圈数 ${room.players.map((p) => p.laps).join(' : ')} · 净资产 ${netLine}`;
+    return;
   }
   const best = [...room.players].sort((a, b) => netWorth(room, b) - netWorth(room, a))[0];
   g.winner = best.id;
+  g.endReason = `第 ${g.maxRounds} 回合结束，按净资产结算`;
+  g.endDetail = `净资产 ${netLine} · ${best.name} 最高`;
   pushLog(room, `🏁 ${g.maxRounds} 回合结束，按净资产结算：${best.name} 获胜！`);
   setFx(room, 'win', `${best.name} 获胜`);
 }
@@ -1863,4 +1887,4 @@ server.on('error', (e) => {
   if (e.code === 'EADDRINUSE') console.error(`⚠️ 端口 ${PORT} 已被占用（可能已有实例在运行），本实例退出。`);
   else console.error('服务器错误:', e);
 });
-server.listen(PORT, () => console.log(`💕 两个人的游戏屋 v4.2 已启动: http://localhost:${PORT}`));
+server.listen(PORT, () => console.log(`💕 两个人的游戏屋 v4.3 已启动: http://localhost:${PORT}`));

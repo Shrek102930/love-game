@@ -186,10 +186,11 @@ function bindGroup(groupId, key, cls) {
     b.classList.add('active'); sel[key] = b.dataset.v; beep('click');
   });
 }
-['themeBtns', 'modeBtns', 'paceBtns', 'wThemeBtns', 'wModeBtns', 'wPaceBtns'].forEach((id) => {
-  const key = id.includes('Theme') ? 'theme' : id.includes('Mode') ? 'mode' : 'pace';
-  bindGroup(id, key);
-});
+/* v4.3：显式映射。原先用 id.includes('Theme'/'Mode') 判 key，但大厅三组是小写
+   themeBtns/modeBtns/paceBtns，全部误判成 'pace' —— 导致大厅选主题/模式/节奏完全不生效
+   （点「心跳」实际只改了 sel.pace，sel.mode 永远 classic，游戏按 30 回合净资产突然结算）。 */
+const GROUP_KEY = { themeBtns: 'theme', modeBtns: 'mode', paceBtns: 'pace', wThemeBtns: 'theme', wModeBtns: 'mode', wPaceBtns: 'pace' };
+Object.keys(GROUP_KEY).forEach((id) => bindGroup(id, GROUP_KEY[id]));
 // v4.0 游戏合集：情侣大富翁 + 共享小花园 两款可玩，其余 coming soon 占位
 const gkBtns = $('gameKindBtns');
 function syncGameKindUI() {
@@ -1020,7 +1021,13 @@ function renderControls() {
   const c = $('controls'), g = st.game;
   if (animating) return;                      // 动画期间不改控件
   c.innerHTML = '';
-  if (g.phase === 'ended') return;
+  if (g.phase === 'ended') {                       // v4.3：结束后仍可操作，随时重开结果面板
+    c.appendChild(el('div', 'over-inline-tip', '🏁 本局已结束 · 可以自由回看棋盘、地产和日志'));
+    const rb = el('button', 'primary big', '📋 查看本局结果');
+    rb.onclick = () => { beep('click'); renderOver(); };
+    c.appendChild(rb);
+    return;
+  }
   if (['await_mini', 'await_buy', 'auction', 'await_choice'].includes(g.phase)) {
     const txt = { await_mini: '🎮 小游戏进行中…', auction: '🔨 拍卖进行中…',
       await_buy: '🏠 等待购买决定…', await_choice: '🎭 等待人生选择…' }[g.phase];
@@ -1135,13 +1142,20 @@ function renderLog() {
 
 /* ---------- 弹窗：买地 / 拍卖 / 小游戏 / 结束 ---------- */
 let lastModalKey = '';
+/* v4.3：结束屏可复盘 —— 关掉后不再被每次 state 广播重弹，撒花只放一次 */
+let overShownKey = '', overDismissed = false;
 function renderModals() {
   const g = st.game, m = $('modal'), mc = $('modalCard');
+  if (g.phase !== 'ended' && overShownKey) { overShownKey = ''; overDismissed = false; }  // v4.3：新一局自动复位
   // v3.1：3D 骰子 + 逐格移动播放期间先不弹窗，等落定后再弹（否则会盖住动画）
   if (g.moveId && g.moveSteps && g.moveSteps.length && lastMoveKey !== 'mv' + g.moveId) { m.classList.add('hidden'); return; }
   if (animating) { m.classList.add('hidden'); return; }
   const key = g.phase + '|' + (g.mini ? g.mini.kind + (g.mini.resolved ? 'R' : '') + (g.mini.mine ?? 'x') : '') + '|' + (g.auction ? JSON.stringify(g.auction.bids) : '') + '|' + (g.choice ? g.choice.kind + g.choice.byIdx : '');
-  if (g.phase === 'ended') { m.classList.add('hidden'); renderOver(); lastModalKey = key; return; }
+  if (g.phase === 'ended') {
+    m.classList.add('hidden');
+    if (!overDismissed && overShownKey !== key) { renderOver(); overShownKey = key; }  // v4.3：只弹一次，关掉不重弹
+    lastModalKey = key; return;
+  }
   if (!['await_buy', 'auction', 'await_mini', 'await_choice'].includes(g.phase)) { m.classList.add('hidden'); lastModalKey = key; return; }
   if (key === lastModalKey && !m.classList.contains('hidden')) return; // 避免重建打断点击
   lastModalKey = key;
@@ -1239,14 +1253,59 @@ function renderMiniModal(mc, g) {
     socket.emit('miniPick', { value: Number(b.dataset.i) });
   };
 }
+/* v4.3：旧存档 / 服务端未下发 endReason 时，从现有字段兜底推导，绝不空白 */
+function deriveEndReason(g, ps) {
+  if (g.endReason) return g.endReason;
+  if (g.coop === true) return g.mode === 'heart' ? '默契值攒满，共同获胜' : '两人一起达成目标，共同获胜';
+  if (g.coop === false) return '有人资金告罄破产，合作失败';
+  const broke = ps.find((p) => p.bankrupt);
+  if (broke) return `${broke.name} 资金告罄，破产出局`;
+  if (g.mode === 'race') return '率先跑完全程，赢得竞速';
+  if (g.maxRounds && g.rounds >= g.maxRounds) return `第 ${g.maxRounds} 回合结束，按净资产结算`;
+  return '本局结束';
+}
+function deriveEndDetail(g, ps) {
+  if (g.endDetail) return g.endDetail;
+  return `终局净资产 ${ps.map((p) => `${p.name} ${p.net}`).join(' : ')}`;
+}
 function renderOver() {
-  const g = st.game, o = $('over');
-  const w = st.players.find((p) => p.id === g.winner);
+  const g = st.game, o = $('over'), ps = st.players;
+  // v4.3：结束瞬间清掉会盖住说明的互动大弹窗（最后一次比心/礼物的飘字），让胜因立刻可见
+  const fxLayer = $('interactFxLayer');
+  if (fxLayer) fxLayer.querySelectorAll('.i-fx-big').forEach((n) => n.remove());
+  const w = ps.find((p) => p.id === g.winner);
   let title, emoji, sub;
-  if (g.coop === true) { title = g.mode === 'heart' ? '💗 默契满格！' : '🎉 合作成功！'; emoji = '💕'; sub = g.mode === 'heart' ? '你们心有灵犀，一起通关啦' : '两个人一起赢，才最好玩'; }
+  if (g.coop === true) { title = g.mode === 'heart' ? '💗 默契满格！' : '🎉 合作成功！'; emoji = '💕'; sub = '两个人一起赢，才最好玩'; }
   else if (g.coop === false) { title = '💔 这次没通关'; emoji = '🥺'; sub = '再来一局，这次一定行'; }
-  else { title = w ? `🎉 ${w.name} 获胜！` : '游戏结束'; emoji = g.mode === 'race' ? '🏁' : '🏆'; sub = g.mode === 'race' ? '率先跑完全程！' : `净资产 ${w ? w.net : 0}`; }
+  else { title = w ? `🎉 ${w.name} 获胜！` : '游戏结束'; emoji = g.mode === 'race' ? '🏁' : '🏆'; sub = '本局结束 · 下面说清楚为什么赢'; }
   $('overEmoji').textContent = emoji; $('winText').textContent = title; $('overSub').textContent = sub;
+
+  // 为什么赢：原因 + 关键数据
+  $('overReason').textContent = deriveEndReason(g, ps);
+  $('overDetail').textContent = deriveEndDetail(g, ps);
+
+  // 双方终局资产对比
+  $('overAssets').innerHTML = ps.map((p, i) => {
+    const isW = !!(g.winner && p.id === g.winner);
+    return `<div class="oa-row${p.bankrupt ? ' broke' : ''}${isW ? ' win' : ''}">
+      <img class="oa-av" src="${avatarSrc(p, i)}" alt="">
+      <span class="oa-name">${escapeHtml(p.name)}${p.isYou ? '（你）' : ''}</span>
+      <span class="oa-tag">${p.bankrupt ? '破产出局' : (isW ? '🏆 获胜' : '')}</span>
+      <b class="oa-net">${p.net}</b></div>`;
+  }).join('');
+
+  // 终局回顾：最近几手日志（服务端 log 最新在前）
+  const lg = (g.log || []).slice(0, 6);
+  $('overLogList').innerHTML = lg.length
+    ? lg.map((l) => `<div class="ol-item">${escapeHtml(l.msg || '')}</div>`).join('')
+    : '<div class="ol-item">本局没有更多记录</div>';
+
+  // 复盘：关掉弹窗回终局棋盘，不再被广播重弹
+  $('reviewBtn').onclick = () => {
+    beep('click'); overDismissed = true; o.classList.add('hidden');
+    const f = $('boardFrame'); if (f && f.scrollIntoView) f.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+
   o.classList.remove('hidden'); beep(g.coop === false ? 'lose' : 'win'); confetti();
 }
 

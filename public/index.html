@@ -4,9 +4,9 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 <title>💕 两个人的游戏屋 · 情侣异地联机小游戏合集</title>
-<meta name="app-version" content="v4.2" />
+<meta name="app-version" content="v4.3" />
 <meta name="theme-color" content="#ff8faa" />
-<link rel="stylesheet" href="/style.css?v=10" />
+<link rel="stylesheet" href="/style.css?v=11" />
 </head>
 <body>
 
@@ -347,15 +347,35 @@
   </div>
 </div>
 
-<!-- ============ 结束屏 ============ -->
+<!-- ============ 结束屏（v4.3：说清为什么赢 + 可复盘） ============ -->
 <div id="over" class="modal hidden">
   <div class="modal-card over-card">
     <div class="over-emoji" id="overEmoji">🎉</div>
     <h1 id="winText">游戏结束</h1>
     <p class="sub" id="overSub"></p>
+
+    <!-- 为什么赢：结束原因 + 关键数据 -->
+    <div class="over-why">
+      <div class="ow-label">为什么赢 · 这一局怎么结束的</div>
+      <div class="ow-reason" id="overReason"></div>
+      <div class="ow-detail" id="overDetail"></div>
+    </div>
+
+    <!-- 双方终局资产对比 -->
+    <div class="over-assets" id="overAssets"></div>
+
+    <!-- 终局回顾：最近几手日志 -->
+    <details class="over-log" id="overLogBox">
+      <summary>终局回顾 · 看看最后发生了什么</summary>
+      <div class="ol-list" id="overLogList"></div>
+    </details>
+
     <div class="over-chars"><img src="/assets/char-boy.webp" alt=""><img src="/assets/char-girl.webp" alt=""></div>
-    <button id="againBtn" class="primary big">🔄 再来一局</button>
-    <button id="homeBtn" class="link-btn">返回大厅</button>
+    <div class="over-actions">
+      <button id="reviewBtn" class="ghost big review-btn">🔍 查看棋盘 · 复盘</button>
+      <button id="againBtn" class="primary big">🔄 再来一局</button>
+      <button id="homeBtn" class="link-btn">返回大厅</button>
+    </div>
 
     <footer class="copyright">
       <span class="cr-line"></span>
@@ -415,6 +435,6 @@
 <div id="interactFxLayer" class="interact-fx-layer"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="/game.js?v=9"></script>
+<script src="/game.js?v=10"></script>
 </body>
 </html>
