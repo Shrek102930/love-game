@@ -446,3 +446,81 @@ h2{font-size:18px;margin:0 0 8px}
   .ib-btns button i{font-size:17px}
   .ib-btns button span{font-size:8.5px}
 }
+
+/* ==================== v3.3 双环棋盘 ==================== */
+/* 外环格子分区排版：图标固定在上、名字独立一行、价格/等级绝对定位角标，
+ * 彻底根治「图标盖住长地名」。配合服务端 short 短名，6 层内容不再堆叠居中。 */
+.tile{justify-content:flex-start;padding:2px 1px 1px}
+.tile .ti{width:14px;height:14px;margin-top:3px;flex:none}
+.tile .ti img{width:100%;height:100%;object-fit:contain;display:block}
+.tile .tn{font-size:7px;line-height:1.05;max-height:2.2em;overflow:hidden;
+  word-break:break-all;flex:none;margin-top:1px;width:100%;padding:0 1px}
+.tile.corner .tn{font-size:7.5px}
+.tile .tprice{position:absolute;bottom:4px;left:0;right:0;font-size:6.5px;line-height:1;color:#a89cb0}
+.tile .tlv{position:absolute;top:1px;right:1px;bottom:auto;font-size:7px}
+.tile .tfork{position:absolute;top:0;left:1px;font-size:8px;line-height:1;z-index:2}
+.tile.fork{box-shadow:inset 0 0 0 1.5px #c9a6f0,0 1px 2px rgba(0,0,0,.05)}
+
+/* 岔路连线：外环四边中点 → 内环，虚线缓慢流动 */
+.fork-links{position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none;overflow:visible}
+.fork-links line{stroke:#c9a6f0;stroke-width:.55;stroke-dasharray:2.2 2.2;opacity:.9;
+  animation:dashFlow 1.6s linear infinite}
+.fork-links circle{fill:#ff6b8f;opacity:.9}
+@keyframes dashFlow{to{stroke-dashoffset:-9}}
+
+/* 内环 12 大格：绝对定位，约外环 2 倍边长，图标/名字/说明分区，绝不重叠 */
+.inner-ring{position:absolute;inset:0;z-index:3;pointer-events:none}
+.inner-tile{position:absolute;border-radius:10px;background:linear-gradient(145deg,#fff,#fff2f8);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;
+  padding:3px 2px;border:1.5px solid #fff;overflow:hidden;
+  box-shadow:0 2px 9px rgba(180,110,160,.18),inset 0 0 0 1px rgba(255,255,255,.7)}
+.inner-tile .it-ico{width:22px;height:22px;flex:none;animation:itFloat 3s ease-in-out infinite}
+@keyframes itFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
+.inner-tile .it-ico img{width:100%;height:100%;object-fit:contain;display:block}
+.inner-tile .it-name{font-size:9px;font-weight:800;color:#5b5268;line-height:1.15;margin-top:2px;
+  max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.inner-tile .it-desc{font-size:7px;color:#a2879d;line-height:1.2;margin-top:1px;
+  max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* 12 种内环小站配色（淡彩区分） */
+.inner-tile.forkgate{background:linear-gradient(145deg,#fff0f6,#ffe3ee)}
+.inner-tile.stock{background:linear-gradient(145deg,#fff8e8,#ffefd0)}
+.inner-tile.wish{background:linear-gradient(145deg,#f0eaff,#e6dcff)}
+.inner-tile.ferris{background:linear-gradient(145deg,#ffeaf3,#ffd9e9)}
+.inner-tile.itemshop{background:linear-gradient(145deg,#fff2e6,#ffe6d2)}
+.inner-tile.chest{background:linear-gradient(145deg,#ffeef6,#ffdcec)}
+.inner-tile.duo_task{background:linear-gradient(145deg,#eaf6ff,#d9ecff)}
+.inner-tile.lottery{background:linear-gradient(145deg,#fff6d9,#ffedb0)}
+.inner-tile.casino{background:linear-gradient(145deg,#f2eaff,#e6d6ff)}
+.inner-tile.hospital{background:linear-gradient(145deg,#e9fbf2,#d5f5e6)}
+.inner-tile.shield{background:linear-gradient(145deg,#eaf3ff,#dbe9ff)}
+.inner-tile.shortcut{background:linear-gradient(145deg,#e9fff6,#ccf7e8)}
+.inner-tile.pulse{animation:tilePulse .5s ease}
+
+/* 中央核心缩小后的内容适配（36.36% 见方） */
+.board-center{grid-row:auto;grid-column:auto;border-radius:14px}
+.board-center .center-heart{font-size:18px}
+.board-center .center-title{font-size:12px;margin-top:1px}
+.board-center .center-sub{font-size:9px;max-width:96%}
+.board-center .dice-area{gap:8px;margin-top:5px}
+.board-center .center-event{font-size:9px;padding:3px 6px;margin-top:5px;max-width:96%}
+
+/* 岔路「走内环」按钮 */
+.inner-btn{background:linear-gradient(135deg,#b39af0,#8f7ae0);color:#fff;
+  font-size:14px;padding:14px 4px;flex:1;box-shadow:0 6px 18px rgba(143,122,224,.4);
+  animation:breathePurple 1.8s infinite}
+@keyframes breathePurple{0%,100%{box-shadow:0 6px 18px rgba(143,122,224,.4)}
+  50%{box-shadow:0 6px 26px rgba(143,122,224,.65)}}
+.advance-btn.half{flex:1;font-size:14px;padding:14px 4px}
+.ctrl-row .roll-btn.half{margin:0}
+
+/* v3.3 极窄屏：内环字再缩、骰子再小 */
+@media (max-width:360px){
+  .inner-tile .it-ico{width:17px;height:17px}
+  .inner-tile .it-name{font-size:7.5px}
+  .inner-tile .it-desc{font-size:6px}
+  .board-center .center-title{font-size:10.5px}
+  .board-center .die3d{--ds:30px}
+  .tile .ti{width:12px;height:12px;margin-top:2px}
+  .tile .tn{font-size:6.5px}
+  .inner-btn,.advance-btn.half{font-size:12.5px;padding:13px 2px}
+}

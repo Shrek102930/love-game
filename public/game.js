@@ -1,4 +1,4 @@
-/* 💕 双人游戏合集 v3.2 —— 前端逻辑（头像自选 / 掷骰两步走 / 双人实时互动） */
+/* 💕 双人游戏合集 v3.3 —— 前端逻辑（双环棋盘 / 岔路抄近道 / 头像 / 掷骰两步走 / 互动） */
 (function () {
 'use strict';
 
@@ -414,6 +414,9 @@ const TILE_IMG = {
   chance: 'ic-chance.png', destiny: 'ic-destiny.png', tax: 'ic-coin.png',
   minigame: 'ic-dice.png', station: 'ic-go.png', utility: 'ic-house.png',
   bank: 'ic-coin.png', life: 'ic-gift.png', portal: 'ic-heart.png', property: 'ic-house.png',
+  forkgate: 'ic-heart.png', stock: 'ic-coin.png', wish: 'ic-gift.png', ferris: 'ic-heart.png',
+  itemshop: 'ic-gift.png', chest: 'ic-gift.png', duo_task: 'ic-heart.png', lottery: 'ic-chance.png',
+  casino: 'ic-dice.png', hospital: 'ic-heart.png', shield: 'ic-house.png', shortcut: 'ic-go.png',
 };
 function makeDieHtml() {
   return '<div class="cube">' + ['f-front', 'f-right', 'f-back', 'f-left', 'f-top', 'f-bottom']
@@ -424,17 +427,59 @@ function buildBoard() {
   b.innerHTML = '';
   tileEls = [];
   const groups = board.groups || {};
-  board.tiles.forEach((t, i) => {
+  const outerN = board.outerN || 40;
+
+  /* ---- 外环 40 格：grid 定位；内容分区排版（图标在上、名字独立行、价格/等级绝对定位）
+   * 根治「图标盖住长地名」：不再把 6 层内容全部 flex 居中堆叠。 ---- */
+  board.tiles.slice(0, outerN).forEach((t, i) => {
     const [r, c] = board.layout[i];
-    const d = el('div', 'tile ' + t.type + (['go', 'jail', 'park', 'gotojail'].includes(t.type) ? ' corner' : ''));
+    const d = el('div', 'tile ' + t.type + (['go', 'jail', 'park', 'gotojail'].includes(t.type) ? ' corner' : '') + (t.fork ? ' fork' : ''));
     d.style.gridRow = String(r + 1); d.style.gridColumn = String(c + 1);
     d.dataset.idx = String(i);
     const img = TILE_IMG[t.type] || TILE_IMG.property;
     const bar = t.group && groups[t.group] ? `<div class="tbar" style="background:${groups[t.group].color}"></div>` : '';
     const price = t.price != null && ['property', 'station', 'utility'].includes(t.type) ? `<div class="tprice">${t.price}</div>` : '';
-    d.innerHTML = `${bar}<div class="ti"><img src="/assets/${img}" alt="" loading="lazy"></div><div class="tn">${escapeHtml(t.name.replace(/^[^\u4e00-\u9fa5a-zA-Z]+\s*/, ''))}</div>${price}<div class="towner"></div><div class="tlv"></div>`;
+    const nm = t.short || t.name.replace(/^[^\u4e00-\u9fa5a-zA-Z]+\s*/, '');
+    d.innerHTML = `${bar}<div class="ti"><img src="/assets/${img}" alt="" loading="lazy"></div><div class="tn">${escapeHtml(nm)}</div>${price}<div class="towner"></div><div class="tlv"></div>${t.fork ? '<div class="tfork" title="岔路口">🛤️</div>' : ''}`;
     b.appendChild(d); tileEls.push(d);
   });
+
+  /* ---- v3.3 岔路连线：4 条虚线，从外环四边中点连向内环 ---- */
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('class', 'fork-links'); svg.setAttribute('viewBox', '0 0 100 100');
+  svg.setAttribute('preserveAspectRatio', 'none');
+  const LINKS = [[50, 95.45, 50, 77.27], [50, 4.55, 50, 22.73],
+                 [4.55, 50, 22.73, 50], [95.45, 50, 77.27, 50]];
+  LINKS.forEach(([x1, y1, x2, y2]) => {
+    const ln = document.createElementNS(NS, 'line');
+    ln.setAttribute('x1', x1); ln.setAttribute('y1', y1);
+    ln.setAttribute('x2', x2); ln.setAttribute('y2', y2);
+    svg.appendChild(ln);
+    const dot = document.createElementNS(NS, 'circle');
+    dot.setAttribute('cx', x1); dot.setAttribute('cy', y1); dot.setAttribute('r', '1.3');
+    svg.appendChild(dot);
+  });
+  b.appendChild(svg);
+
+  /* ---- v3.3 内环 12 大格：绝对定位，约外环 2 倍边长，图标/名字/说明全放得下 ---- */
+  const ir = el('div', 'inner-ring'); ir.id = 'innerRing';
+  const iw = board.innerW || 18.18, ih = board.innerH || 18.18;
+  const iL = board.innerLayout || [], iStart = board.innerStart || 40;
+  iL.forEach((p, j) => {
+    const i = iStart + j, t = board.tiles[i]; if (!t) return;
+    const d = el('div', 'inner-tile ' + t.type);
+    d.style.left = p.l + '%'; d.style.top = p.t + '%';
+    d.style.width = iw + '%'; d.style.height = ih + '%';
+    d.dataset.idx = String(i);
+    const img = t.icon || TILE_IMG[t.type] || TILE_IMG.property;
+    const nm = String(t.name).replace(/^[^\u4e00-\u9fa5a-zA-Z]+\s*/, '');
+    d.innerHTML = `<div class="it-ico"><img src="/assets/${img}" alt="" loading="lazy"></div><div class="it-name">${escapeHtml(nm)}</div><div class="it-desc">${escapeHtml(t.desc || '')}</div>`;
+    ir.appendChild(d); tileEls[i] = d;
+  });
+  b.appendChild(ir);
+
+  /* ---- 中央核心：缩到中间 2×2 逻辑格，放 3D 骰子 + 主题景观 ---- */
   const center = el('div', 'board-center');
   center.id = 'boardCenter';
   center.innerHTML = `<div class="center-heart">💗</div><div class="center-title" id="centerTitle">${escapeHtml(board.themeName)}</div>
@@ -444,7 +489,7 @@ function buildBoard() {
       <div class="die3d flat" id="die2" data-v="1">${makeDieHtml()}</div>
     </div>
     <div class="center-event" id="centerEvent"></div>`;
-  center.style.gridRow = '2 / 11'; center.style.gridColumn = '2 / 11';
+  center.style.cssText = 'position:absolute;left:31.82%;top:31.82%;width:36.36%;height:36.36%;z-index:4';
   b.appendChild(center);
   const pl = el('div', 'pawn-layer'); pl.id = 'pawnLayer';
   pawnEls = [el('div', 'pawn p0'), el('div', 'pawn p1')];
@@ -461,9 +506,17 @@ function buildBoard() {
 
 /* 环形坐标 → 百分比 */
 function posStyle(pos, idx) {
-  const [r, c] = board.layout[pos] || [10, 10];
   const ox = idx === 0 ? -2.1 : 2.1;
   const oy = idx === 0 ? -2.1 : 2.1;
+  // v3.3 内环格：用 innerLayout 的中心百分比
+  if (pos >= (board.innerStart || 40) && board.innerLayout) {
+    const p = board.innerLayout[pos - (board.innerStart || 40)];
+    if (p) {
+      const cx = p.l + (board.innerW || 18.18) / 2, cy = p.t + (board.innerH || 18.18) / 2;
+      return { left: `calc(${cx}% + ${ox}%)`, top: `calc(${cy}% + ${oy}%)` };
+    }
+  }
+  const [r, c] = board.layout[pos] || [10, 10];
   return { left: `calc(${(c + 0.5) * 100 / 11}% + ${ox}%)`, top: `calc(${(r + 0.5) * 100 / 11}% + ${oy}%)` };
 }
 function placePawns(positions, instant) {
@@ -485,6 +538,14 @@ function tipText(pos, idx) {
   return `<span class="lt-pin">📍</span><b>${escapeHtml(nm)}</b><span class="lt-who">${mine ? '你在这里' : 'TA 在这'}</span>`;
 }
 function tipPosStyle(pos) {
+  // v3.3 内环格：气泡落在内环格上方，避免跑到外环
+  if (pos >= (board.innerStart || 40) && board.innerLayout) {
+    const p = board.innerLayout[pos - (board.innerStart || 40)];
+    if (p) {
+      const cx = p.l + (board.innerW || 18.18) / 2, cy = p.t + (board.innerH || 18.18) / 2;
+      return { left: `clamp(66px, ${cx}%, calc(100% - 66px))`, top: `clamp(13px, ${cy - 6}%, calc(100% - 13px))` };
+    }
+  }
   const [r, c] = board.layout[pos] || [10, 10];
   let dx = 0, dy = 0;
   if (r === 10) dy = -9;            // 底边 → 朝中央(上)
@@ -615,7 +676,7 @@ function renderCenter() {
   if (!sub) return;
   const fx = g.eventFx;
   sub.textContent = g.mode === 'heart' ? `默契值 ${g.heart}/${g.heartTarget} 💗` :
-    (g.modeName || '') + ' · 40 格环游';
+    (g.modeName || '') + ' · 52 格双环';
   if (ev) ev.textContent = fx && fx.text ? fx.text : (g.lastEvent && g.lastEvent.text ? g.lastEvent.text : '一起出发吧 💕');
   // v3.2：骰子点数由 diceId 动画（playDice）落定显示，此处不再覆盖 3D 翻滚
   const eb = $('eventBar');
@@ -640,18 +701,31 @@ function renderControls() {
     const mover = st.players[g.current];
     const n = g.pendingSteps || 0;
     if (mover && mover.isYou) {
-      const b = el('button', 'roll-btn advance-btn', `👣 前进 ${n} 步`);
+      const canInner = !!g.canInner;
+      const row = canInner ? el('div', 'ctrl-row') : c;
+      const b = el('button', 'roll-btn advance-btn' + (canInner ? ' half' : ''), canInner ? `👣 外环 ${n} 步` : `👣 前进 ${n} 步`);
       b.id = 'advanceBtn';
-      b.onclick = () => {
+      const label = b.textContent;
+      const fire = (inner) => {
         if (animating) return;
         beep('click');
-        b.textContent = '👣 出发中…'; b.disabled = true;
-        $('eventBar').textContent = '👣 出发！';
+        row.querySelectorAll('button').forEach((x) => { x.disabled = true; });
+        b.textContent = '👣 出发中…';
+        $('eventBar').textContent = inner ? '🛤️ 拐进内环抄近道！' : '👣 出发！';
         clearTimeout(rollTimeout);
-        rollTimeout = setTimeout(() => { if (b.isConnected) { b.disabled = false; b.textContent = `👣 前进 ${n} 步`; } }, 5000);
-        socket.emit('confirmMove');
+        rollTimeout = setTimeout(() => { if (b.isConnected) { b.disabled = false; b.textContent = label; row.querySelectorAll('button').forEach((x) => { x.disabled = false; }); } }, 5000);
+        socket.emit('confirmMove', inner ? { inner: true } : {});
       };
-      c.appendChild(b);
+      b.onclick = () => fire(false);
+      row.appendChild(b);
+      if (canInner) {
+        const ib = el('button', 'roll-btn inner-btn', '🛤️ 走内环');
+        ib.id = 'innerBtn';
+        ib.title = '从岔路口拐进内环，经过一路双人小站再抄近道回外环';
+        ib.onclick = () => fire(true);
+        row.appendChild(ib);
+        c.appendChild(row);
+      }
     } else {
       c.appendChild(el('div', 'ctrl-row', `<div class="roll-btn waiting" style="text-align:center">⏳ 等 ${escapeHtml(mover ? mover.name : '对方')} 点「前进」…</div>`));
     }
@@ -858,8 +932,9 @@ function handleFx() {
     if (mk !== lastMoveKey) {
       lastMoveKey = mk;
       lastMover = g.mover || 0;
-      const first = g.moveSteps[0];
-      const prev = (first - 1 + board.tiles.length) % board.tiles.length;
+      // v3.3：服务端下发 moveFrom 作为动画起点（内环序列首格不再是 from+1，
+      // 旧版 (first-1+N)%N 在 52 格与跨环跳转时会算错起点）
+      const prev = (g.moveFrom != null) ? g.moveFrom : st.players[lastMover].pos;
       // 把移动方棋子先放回起点，再逐格播放；其他人直接就位
       placePawns(st.players.map((p, i) => i === lastMover ? prev : p.pos), true);
       setTimeout(() => playMove(g.moveSteps), 30);

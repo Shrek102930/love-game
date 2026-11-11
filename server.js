@@ -5,7 +5,8 @@
  * v3.1: 模拟人生 / 传送门 / 人生选择 / 悄悄话 / 退出设置 / 位置气泡 / 3D 骰子
  * v3.2: 多组头像自选+自定义上传 / 掷骰与前进两步走(await_move) /
  *       双人实时互动(比心·送礼·送钱·戳戳·猜拳) / 共同决策 story / 岔路 fork /
- *       BOARD_VERSION=5
+ * v3.3: 双环棋盘(外环40 + 内环12大格=52格) / 4个岔路口抄近道 /
+ *       12种内环双人玩法 / 格子分区排版治重叠 / BOARD_VERSION=6
  *
  * 架构：多文件。前端在 public/（express.static 托管），图片可缓存。
  * 运行：node server.js  (PORT 环境变量覆盖，默认 3000)
@@ -23,7 +24,7 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 const PORT = process.env.PORT || 3000;
 const SAVE_DIR = path.join(__dirname, 'saves');
 if (!fs.existsSync(SAVE_DIR)) fs.mkdirSync(SAVE_DIR, { recursive: true });
-const BOARD_VERSION = 5; // v3.2：新增 await_move/头像/互动字段与卡池，旧存档自动作废
+const BOARD_VERSION = 6; // v3.3：双环52格/岔路/内环玩法，旧存档自动作废
 
 /* 灰度开关（默认全开；出问题把对应项设 0 即可回退某项能力） */
 const F = {
@@ -106,14 +107,63 @@ const LAYOUT = [
   { t: 'property', g: 'navy',   p: 400 },
 ];
 
+
+/* =========================================================
+ *  v3.3 双环棋盘
+ *  外环 40 格：类型/索引/坐标/经济规则 100% 不动（OUTER_N 固定 40）。
+ *  内环 12 格：占中央 9×9，每格约 18.18% 见方 ≈ 外环格 2 倍边长，
+ *             用绝对定位百分比画在 .inner-ring 层（不受 grid 整除约束）。
+ *  关键设计：内环是「抄近道支线」而非可停留的地图。玩家停在岔路格时，
+ *  掷骰后可选「走内环」：本次移动序列经过若干内环格（经过即结算轻量事件）
+ *  再从捷径出口回外环落点 —— player.pos 始终落在 0..39，
+ *  买地/租金/存档/圈数/胜负/卡池所有既有逻辑零感知、零破坏。
+ * ======================================================= */
+const OUTER_N = 40;            // 外环格数（所有移动取模固定用它，不受 52 格影响）
+const INNER_START = 40;        // 内环格在 tiles 数组中的起始下标
+const INNER_N = 12;
+const FORK_TILES = [5, 15, 25, 35];   // 4 个岔路口（四边中点，视觉连线到内环）
+const INNER_W = 18.18, INNER_H = 18.18;  // 每个内环格百分比尺寸（≈2×2 grid 单元）
+/* 4×4 逻辑环去中间 2×2 = 12 格，顺时针；l/t 为左上角百分比 */
+const INNER_POS = [
+  { l: 13.64, t: 13.64 }, { l: 31.82, t: 13.64 }, { l: 50.00, t: 13.64 }, { l: 68.18, t: 13.64 },
+  { l: 68.18, t: 31.82 }, { l: 68.18, t: 50.00 },
+  { l: 68.18, t: 68.18 }, { l: 50.00, t: 68.18 }, { l: 31.82, t: 68.18 }, { l: 13.64, t: 68.18 },
+  { l: 13.64, t: 50.00 }, { l: 13.64, t: 31.82 },
+];
+/* 12 个内环「心跳小站」：全部为经过即结算的轻量事件，双人向优先，不弹窗不改 phase */
+const INNER_LAYOUT = [
+  { t: 'forkgate', icon: 'ic-heart.png',   name: '🛤️ 岔路入口', campus: '🛤️ 小路入口', desc: '牵手拐进小路' },
+  { t: 'stock',    icon: 'ic-coin.png',    name: '📈 心动股市', campus: '📈 社团股',   desc: '涨跌都一起扛' },
+  { t: 'wish',     icon: 'ic-gift.png',    name: '⛲ 许愿池',   campus: '⛲ 许愿池',   desc: '许个小小的愿' },
+  { t: 'ferris',   icon: 'ic-heart.png',   name: '🎡 摩天轮',   campus: '🎡 摩天轮',   desc: '到最高处说喜欢' },
+  { t: 'itemshop', icon: 'ic-gift.png',    name: '🎁 道具小铺', campus: '🎁 社团小铺', desc: '挑个护身小物' },
+  { t: 'chest',    icon: 'ic-gift.png',    name: '💝 共同宝箱', campus: '💝 共同宝箱', desc: '两个人一起存' },
+  { t: 'duo_task', icon: 'ic-heart.png',   name: '🤝 双人任务', campus: '🤝 双人任务', desc: '一起完成才算' },
+  { t: 'lottery',  icon: 'ic-chance.png',  name: '🎟️ 幸运彩票', campus: '🎟️ 幸运彩票', desc: '奖池会滚存哦' },
+  { t: 'casino',   icon: 'ic-dice.png',    name: '🎰 迷你赌场', campus: '🎰 迷你赌场', desc: '手气大考验' },
+  { t: 'hospital', icon: 'ic-heart.png',   name: '🏥 爱心医院', campus: '🏥 校医室',   desc: '记得来探病呀' },
+  { t: 'shield',   icon: 'ic-house.png',   name: '🛡️ 防护小屋', campus: '🛡️ 防护小屋', desc: '领一张免租券' },
+  { t: 'shortcut', icon: 'ic-go.png',      name: '🚀 捷径出口', campus: '🚀 捷径出口', desc: '抄近道成功啦' },
+];
+const shortName = (nm) => {
+  const t = String(nm).replace(/^[^\u4e00-\u9fa5a-zA-Z]+\s*/, '');
+  return t.length > 4 ? t.slice(0, 4) : t;
+};
+
 function buildTheme(key, name, names, scale) {
   const tiles = LAYOUT.map((cell, i) => {
-    const t = { type: cell.t, name: names[i] || `格子${i}` };
+    const t = { type: cell.t, name: names[i] || `格子${i}`, ring: 'outer', short: shortName(names[i] || `格子${i}`) };
     if (cell.p != null) t.price = Math.round(cell.p * scale);
     if (cell.g) t.group = cell.g;
     if (cell.k) t.kinds = cell.k;
     if (cell.pair != null) t.pair = cell.pair;   // v3.1 传送门配对
+    if (FORK_TILES.includes(i)) t.fork = true;    // v3.3 岔路口（保留原车站类型与经济）
     return t;
+  });
+  INNER_LAYOUT.forEach((cell, j) => {
+    const nm = key === 'campus' ? cell.campus : cell.name;
+    tiles.push({ type: cell.t, name: nm, short: shortName(nm), desc: cell.desc,
+      icon: cell.icon, ring: 'inner' });
   });
   return {
     key, name, scale, tiles,
@@ -161,7 +211,7 @@ const GO_INDEX = 0;
  * 目前仅 monopoly 可玩；后续新增游戏在 RULES 门面补一个分支即可，
  * 房间/连接/同步/存档这套共享底座无需复制。 */
 const GAME_KINDS = {
-  monopoly: { name: '情侣大富翁', icon: '🎲', tag: '40 格环形 · 买地建房', ready: true },
+  monopoly: { name: '情侣大富翁', icon: '🎲', tag: '52 格双环 · 岔路抄近道', ready: true },
 };
 const MODES = {
   classic: { name: '经典对战', maxRounds: 30, targetLaps: 0, coopTarget: 0, heartTarget: 0,
@@ -201,6 +251,11 @@ const CARD_POOLS = {
     { text: '人生小考：请做出一个选择', e: { type: 'life' } },
     { text: '💞 一个要两个人一起做的决定…', e: { type: 'story' } },
     { text: '🛤️ 前方岔路，自己挑方向', e: { type: 'fork' } },
+    { text: '🎡 双人套票，两人各 +90', e: { type: 'both', v: 90 } },
+    { text: '💌 给 TA 写封小信（默契 +2）', e: { type: 'heart', v: 2 } },
+    { text: '🎁 开启共同宝箱：两人各 +120、默契 +1', e: { type: 'bothHeart', v: 120 } },
+    { text: '🏥 陪 TA 去看病，你 -100、TA +100', e: { type: 'gift', v: 100 } },
+    { text: '🍿 一起看场电影，两人各 -50（默契 +1）', e: { type: 'bothHeart', v: -50 } },
   ],
   destiny: [
     { text: '投资获利，+180', e: { type: 'money', v: 180 } },
@@ -227,6 +282,10 @@ const CARD_POOLS = {
     { text: '误入传送漩涡，瞬移到对面！', e: { type: 'teleport' } },
     { text: '💞 一起做个温柔的决定吧', e: { type: 'story' } },
     { text: '🛤️ 命运的岔路口，选一条', e: { type: 'fork' } },
+    { text: '🌠 一起许愿，两人各 +80、默契 +1', e: { type: 'bothHeart', v: 80 } },
+    { text: '💗 心有灵犀，默契值 +2', e: { type: 'heart', v: 2 } },
+    { text: '🎢 双人过山车，各 -40（默契 +2）', e: { type: 'both', v: -40 } },
+    { text: '🍰 最后一块蛋糕让给 TA -60（默契 +2）', e: { type: 'gift', v: 60 } },
   ],
 };
 /* v3.1 模拟人生：人生驿站 / 命运卡触发的双选情境 */
@@ -261,6 +320,15 @@ const LIFE_EVENTS = [
   { q: '🍲 TA 加班到很晚，你想？', o: [
       { label: '带夜宵去接 -80（默契 +2）', e: { money: -80, heart: 2 } },
       { label: '发消息等 TA（默契 +1）', e: { heart: 1 } } ] },
+  { q: '🌧️ 突然下大雨，只有一把伞', o: [
+      { label: '一起挤着走（默契 +2）', e: { heart: 2 } },
+      { label: '干脆淋雨跑回家 +100', e: { money: 100 } } ] },
+  { q: '📷 路过一家拍贴纸相的店', o: [
+      { label: '拍一组傻傻的合照 -60（默契 +2）', e: { money: -60, heart: 2 } },
+      { label: '存下来下次拍 +80', e: { deposit: 80 } } ] },
+  { q: '🎧 只有一副耳机，听什么？', o: [
+      { label: '一人一只，听 TA 的歌单（默契 +2）', e: { heart: 2 } },
+      { label: '外放一起听 +60', e: { money: 60 } } ] },
 ];
 const QUIZ_POOL = [
   { q: '蜜蜂采集什么来酿蜜？', o: ['花蜜', '树叶', '雨水', '泥土'], a: 0 },
@@ -324,6 +392,9 @@ const STORY_POOL = [
   { q: '💌 纪念日想要哪种惊喜？', o: ['手写长信', '一顿亲手做的饭', '突然出现', '一起去看海'] },
   { q: '🌙 睡不着的时候，最想一起干嘛？', o: ['聊到天亮', '半夜压马路', '各刷手机但挨着', '一起听歌'] },
   { q: '🍰 最后一块蛋糕，怎么办？', o: ['让给 TA', '一人一半', '石头剪刀布', '再买一块'] },
+  { q: '🛋️ 一起窝着，今晚谁来选片？', o: ['TA 选，我陪看', '我选，TA 陪看', '各看各的但挨着', '一起重刷老片'] },
+  { q: '🌅 如果明天不用上班，第一件事？', o: ['一起看日出', '睡到自然醒', '说走就走的小旅行', '在家做一整天饭'] },
+  { q: '💬 最想听对方说的一句话？', o: ['「有我在」', '「辛苦啦」', '「想你了」', '「我们慢慢来」'] },
 ];
 /* v3.2 岔路情境：复用 await_choice 框架，选择落到不同步数（不递归 resolveTile） */
 const FORK_EVENTS = [
@@ -333,6 +404,10 @@ const FORK_EVENTS = [
       { label: '🎡 热闹集市（+2 步）', jump: 2 }, { label: '🌲 安静林荫（+5 步）', jump: 5 } ] },
   { q: '🚌 今天想慢慢逛还是快快跑？', o: [
       { label: '🐢 边走边看（+1 步）', jump: 1 }, { label: '🚀 一路小跑（+7 步）', jump: 7 } ] },
+  { q: '🛤️ 两条小路，这次听谁的？', o: [
+      { label: '🌷 左边花径（+4 步）', jump: 4 }, { label: '🌊 右边海风（+8 步）', jump: 8 } ] },
+  { q: '🎲 岔路口，凭第一直觉？', o: [
+      { label: '🍀 稳稳走（+2 步）', jump: 2 }, { label: '⚡ 冲一把（+9 步）', jump: 9 } ] },
 ];
 
 const RPS_PRIZE = 60, QUIZ_REWARD = 80, QUIZ_PENALTY = 40;
@@ -370,7 +445,7 @@ function buildGame(room) {
     current: 0, maxRounds, rounds: 0,
     targetLaps: m.targetLaps, coopTarget: m.coopTarget, heartTarget: m.heartTarget,
     heart: 0, phase: 'await_roll', dice: [0, 0], doublesCount: 0,
-    diceId: 0, pending: null,
+    diceId: 0, pending: null, jackpot: 0, innerRuns: 0,
     mini: null, auction: null, lastEvent: null, eventFx: null, buyTile: null, buyPrice: 0,
     log: [], winner: null, coop: null, moveSteps: [], passedGo: false,
     moveId: 0, fxId: 0,
@@ -383,7 +458,7 @@ function buildGame(room) {
     p.savings = 0; p.loan = 0; p.cars = 0; p.carBoost = 0;
   });
   pushLog(room, `游戏开始！${theme.name} · ${m.name} · ${pace.name}节奏（${m.desc}）`);
-  pushLog(room, `每人初始资金 ${theme.startMoney}，40 格环形棋盘，出发！`);
+  pushLog(room, `每人初始资金 ${theme.startMoney}，52 格双环棋盘（外环 40 + 内环 12），4 个岔路口可抄近道，出发！`);
 }
 function pushLog(room, msg) {
   if (!room.game) return;
@@ -397,6 +472,8 @@ function boardState(room) {
     boardVersion: BOARD_VERSION, gameKind: room.gameKind || 'monopoly',
     theme: room.theme, themeName: THEMES[room.theme].name,
     tiles: THEMES[room.theme].tiles, groups: GROUPS, layout: LAYOUT.map((_, i) => tileRC(i)),
+    innerLayout: INNER_POS, innerW: INNER_W, innerH: INNER_H,
+    forkTiles: FORK_TILES, outerN: OUTER_N, innerStart: INNER_START,
     salary: THEMES[room.theme].salary, startMoney: THEMES[room.theme].startMoney,
     scale: THEMES[room.theme].scale, avatars: AVATAR_IDS,
   };
@@ -434,6 +511,8 @@ function publicState(room, forId) {
       tileDyn: td, moveSteps: g.moveSteps, passedGo: g.passedGo,
       moveId: g.moveId || 0, fxId: g.fxId || 0, mover: g.mover || 0,
       diceId: g.diceId || 0, pendingSteps: g.pending ? g.pending.steps : 0,
+      canInner: !!(g.pending && g.pending.canInner), moveFrom: g.moveFrom || 0,
+      jackpot: g.jackpot || 0, innerRuns: g.innerRuns || 0,
       buyTile: g.buyTile, buyPrice: g.buyPrice, choice: g.choice || null,
       mini: g.mini ? miniView(room, forId) : null,
       auction: g.auction ? { ...g.auction } : null,
@@ -535,21 +614,22 @@ function setFx(room, fx, text) {
   room.game.eventFx = { kind: fx, text: text || '' };
   room.game.lastEvent = { type: 'info', text: text || '' };
 }
-function setMove(room, seq, player) {
+function setMove(room, seq, player, from) {
   const g = room.game;
   g.moveId = (g.moveId || 0) + 1;
   g.moveSteps = seq;
   g.mover = player ? room.players.indexOf(player) : (g.mover || 0);
+  if (from != null) g.moveFrom = from;   // v3.3 动画起点（内环序列首格不再是 from+1）
 }
 function goToPos(room, player, target, collectSalary) {
-  const g = room.game, N = THEMES[room.theme].tiles.length;
+  const g = room.game, N = OUTER_N;
   const from = player.pos;
   const steps = (target - from + N * 2) % N;
   const seq = [];
   for (let k = 1; k <= Math.max(steps, 0); k++) seq.push((from + k) % N);
   if (steps === 0) seq.push(target);
   player.pos = target;
-  setMove(room, seq, player);
+  setMove(room, seq, player, from);
   g.passedGo = collectSalary && seq.some((x) => x === GO_INDEX);
   return g.passedGo;
 }
@@ -594,50 +674,141 @@ function rollDice(room, player) {
     pushLog(room, `🚗 ${player.name} 开车兜风，本次多走 2 格（剩余 ${player.carBoost} 次）。`);
   }
   const steps = d1 + d2 + bonus + carAdd;
-  g.pending = { steps, isDouble, from: player.pos, moverIdx: room.players.indexOf(player) };
+  const onFork = !!(F.extraRules && THEMES[room.theme].tiles[player.pos] &&
+                    THEMES[room.theme].tiles[player.pos].fork);
+  g.pending = { steps, isDouble, from: player.pos, moverIdx: room.players.indexOf(player), canInner: onFork };
   g.moveSteps = [];                                // 掷骰阶段不移动，避免前端误播旧序列
   g.phase = 'await_move';
-  pushLog(room, `🎲 ${player.name} 掷出 ${d1}+${d2}${bonus ? '+' + bonus + '(快骰)' : ''}${carAdd ? '+2(小车)' : ''}=${steps} 点，点「前进」出发～`);
+  pushLog(room, `🎲 ${player.name} 掷出 ${d1}+${d2}${bonus ? '+' + bonus + '(快骰)' : ''}${carAdd ? '+2(小车)' : ''}=${steps} 点，点「前进」出发～${onFork ? '（岔路口：也能选「走内环」抄近道）' : ''}`);
   setFx(room, 'dice', `🎲 ${steps} 点！点「前进」出发`);
 }
 
-function confirmMove(room, player) {
-  const g = room.game, N = THEMES[room.theme].tiles.length;
+/* v3.3 经过起点结算（外环移动与内环抄近道共用） */
+function passGo(room, player) {
+  const g = room.game;
+  player.laps++; player.money += g.salary;
+  pushLog(room, `${player.name} 绕完第 ${player.laps} 圈，经过起点 +${g.salary}。`);
+  if (F.extraRules && (player.savings || 0) > 0) {
+    const interest = Math.max(1, Math.round(player.savings * 0.08));
+    player.savings += interest;
+    pushLog(room, `🏦 ${player.name} 存款生息 +${interest}（共存 ${player.savings}）。`);
+  }
+  if (F.extraRules && (player.loan || 0) > 0) {
+    const pay = Math.min(player.loan, 100);
+    player.loan -= pay; player.money -= pay;
+    pushLog(room, `💳 ${player.name} 自动还贷 -${pay}（剩余 ${player.loan}）。`);
+    checkBankrupt(room, player);
+  }
+}
+
+/* v3.3 内环「心跳小站」：经过即结算，纯数值 + 日志，不弹窗不改 phase。
+ * 全部双人向：涨默契、给对方带礼物、两人各奖钱、奖池滚存…… */
+function applyInnerEvent(room, player, idx) {
+  const g = room.game, t = THEMES[room.theme].tiles[idx];
+  const other = room.players.find((p) => p !== player && !p.bankrupt);
+  const r = Math.random();
+  let text = '';
+  switch (t.type) {
+    case 'forkgate':
+      g.heart += 1; if (other) other.money += 30;
+      text = '🛤️ 拐进岔路，顺手给 TA 带了份小礼物 +30，默契 +1'; break;
+    case 'stock':
+      if (r < 0.55) { const v = 120 + Math.floor(Math.random() * 130); player.money += v;
+        text = `📈 心动股市涨啦 +${v}${other ? '，也替 TA 开心' : ''}`; }
+      else { const v = 80 + Math.floor(Math.random() * 70); player.money -= v;
+        text = `📉 股市回调 -${v}${other ? '，TA 陪你一起扛' : ''}`; }
+      checkBankrupt(room, player); break;
+    case 'wish':
+      if (r < 0.34) { player.money += 150; text = '⛲ 许愿成真 +150'; }
+      else if (r < 0.67) { g.heart += 2; text = '⛲ 许愿一直在一起，默契 +2 💗'; }
+      else { player.items.freeRent = (player.items.freeRent || 0) + 1; text = '⛲ 许到一张免租券 🛡️'; }
+      break;
+    case 'ferris':
+      player.money += 100; if (other) other.money += 100; g.heart += 2;
+      text = '🎡 摩天轮到顶，两人各 +100、默契 +2 💗'; break;
+    case 'itemshop':
+      player.items.freeRent = (player.items.freeRent || 0) + 1; player.money += 50;
+      text = '🎁 挑了个护身小物：免租券 +1、+50'; break;
+    case 'chest':
+      player.money += 80; if (other) other.money += 80; g.heart += 1;
+      text = '💝 一起打开共同宝箱，两人各 +80、默契 +1'; break;
+    case 'duo_task':
+      player.money += 120; if (other) other.money += 120; g.heart += 2;
+      text = '🤝 双人任务完成！两人各 +120、默契 +2'; break;
+    case 'lottery':
+      if (r < 0.22 && (g.jackpot || 0) > 0) {
+        const v = g.jackpot; g.jackpot = 0; player.money += v;
+        text = `🎟️ 中奖啦！抱走滚存奖池 ${v} 🎉`;
+      } else {
+        g.jackpot = (g.jackpot || 0) + 30; player.money += 20;
+        text = `🎟️ 没中奖，+20 安慰，奖池滚到 ${g.jackpot}`;
+      }
+      break;
+    case 'casino':
+      if (r < 0.5) { player.money += 100; text = '🎰 手气不错 +100'; }
+      else { player.money -= 100; text = '🎰 这把输了 -100'; }
+      checkBankrupt(room, player); break;
+    case 'hospital':
+      player.money -= 120; if (other) other.money += 30; g.heart += 1;
+      text = '🏥 不小心扭伤 -120，TA 赶来探病 +30、默契 +1 💗';
+      checkBankrupt(room, player); break;
+    case 'shield':
+      player.items.freeRent = (player.items.freeRent || 0) + 1; g.heart += 1;
+      text = '🛡️ 领到免租券 +1，默契 +1'; break;
+    case 'shortcut':
+      player.money += 100; if (other) other.money += 40;
+      text = '🚀 抄近道成功 +100，也不忘给 TA +40'; break;
+    default:
+      player.money += 50; text = '✨ 小路边的惊喜 +50';
+  }
+  pushLog(room, `${player.name} · ${text}`);
+}
+
+function confirmMove(room, player, goInner) {
+  const g = room.game, N = OUTER_N;
   const pend = g.pending;
   if (!pend) { g.phase = 'await_roll'; return; }
   const { steps, isDouble, from } = pend;
+  const takeInner = !!(goInner && pend.canInner && F.extraRules);
   const seq = [];
-  for (let k = 1; k <= steps; k++) seq.push((from + k) % N);
-  player.pos = seq[seq.length - 1];
-  setMove(room, seq, player);
-  g.passedGo = seq.includes(GO_INDEX);
-  if (g.passedGo) {
-    player.laps++; player.money += g.salary;
-    pushLog(room, `${player.name} 绕完第 ${player.laps} 圈，经过起点 +${g.salary}。`);
-    if (F.extraRules && (player.savings || 0) > 0) {
-      const interest = Math.max(1, Math.round(player.savings * 0.08));
-      player.savings += interest;
-      pushLog(room, `🏦 ${player.name} 存款生息 +${interest}（共存 ${player.savings}）。`);
+  let dest, crossedGo = false;
+
+  if (takeInner) {
+    // 抄近道：从岔路格拐进内环，经过 k 个「心跳小站」(经过即结算)，
+    // 再从捷径出口回外环落点。player.pos 始终是 0..39，既有逻辑零感知。
+    const k = Math.min(INNER_N, Math.max(3, steps));
+    for (let j = 0; j < k; j++) {
+      const ii = INNER_START + j;
+      seq.push(ii);
+      applyInnerEvent(room, player, ii);
     }
-    if (F.extraRules && (player.loan || 0) > 0) {
-      const pay = Math.min(player.loan, 100);
-      player.loan -= pay; player.money -= pay;
-      pushLog(room, `💳 ${player.name} 自动还贷 -${pay}（剩余 ${player.loan}）。`);
-      checkBankrupt(room, player);
-    }
+    g.innerRuns = (g.innerRuns || 0) + 1;
+    const total = steps + Math.min(4, Math.round(k / 3));   // 捷径奖励：额外多走几格
+    dest = (from + total) % N;
+    crossedGo = (from + total) >= N;
+    seq.push(dest);
+    pushLog(room, `🛤️ ${player.name} 拐进内环，穿过 ${k} 个心跳小站，从捷径回到外环！`);
+    setFx(room, 'inner', `🛤️ 内环探险 · 经过 ${k} 站`);
+  } else {
+    for (let j = 1; j <= steps; j++) seq.push((from + j) % N);
+    dest = seq[seq.length - 1];
+    crossedGo = seq.includes(GO_INDEX);
   }
-  const tile = THEMES[room.theme].tiles[player.pos];
-  pushLog(room, `${player.name} 前进 ${steps} 步，到【${tile.name}】。`);
+
+  player.pos = dest;
+  setMove(room, seq, player, from);
+  g.passedGo = crossedGo;
+  if (crossedGo) passGo(room, player);
+  const tile = THEMES[room.theme].tiles[dest];
+  pushLog(room, `${player.name} ${takeInner ? '抄近道' : '前进'} ${steps} 步，到【${tile.name}】。`);
   const other0 = room.players.find((x) => x !== player);
-  if (other0 && !other0.bankrupt && other0.pos === player.pos && player.pos !== GO_INDEX) {
+  if (other0 && !other0.bankrupt && other0.pos === dest && dest !== GO_INDEX) {
     g.heart++;
     pushLog(room, `💗 ${player.name} 和 ${other0.name} 在【${tile.name}】相遇，默契值 +1！`);
     setFx(room, 'heart', '心有灵犀，相遇啦 💗');
   }
   g.pending = null;
-  // v3.2 修复：结算前先把 phase 归位为 await_roll，让 resolveTile 只在有
-  // 待决事件（买地/人生选择/小游戏/拍卖）时覆盖它。否则末尾的
-  // if(phase==='await_roll') 恒不成立，落到普通格会永久卡在 await_move。
+  // v3.2 修复保留：结算前先归位 await_roll，让 resolveTile 只在有待决事件时覆盖。
   g.phase = 'await_roll';
   resolveTile(room, player);
 
@@ -657,12 +828,13 @@ function confirmMove(room, player) {
 function sendJail(room, player, why) {
   const g = room.game;
   const j = findTile(THEMES[room.theme].tiles, 'jail');
+  const oldPos = player.pos;
   player.inJail = true; player.jailTurns = 0; player.pos = j;
   g.doublesCount = 0;
   pushLog(room, `${player.name} ${why}，被送进监狱！`);
   setFx(room, 'toJail', '被送进监狱 😵');
   advanceTurn(room, false);
-  setMove(room, [j], player);
+  setMove(room, [j], player, oldPos);
 }
 
 function resolveTile(room, player) {
@@ -729,15 +901,17 @@ function applyCard(room, player, card) {
   switch (e.type) {
     case 'money': player.money += e.v; checkBankrupt(room, player); break;
     case 'both': room.players.forEach((p) => p.money += e.v); break;
+    case 'bothHeart': room.players.forEach((p) => p.money += e.v); g.heart += 1;
+      if (e.v < 0) checkBankrupt(room, player); break;
     case 'gift':
       player.money -= e.v; if (other) other.money += e.v;
       checkBankrupt(room, player); break;
     case 'goto': goToPos(room, player, e.pos, true); player.money += g.salary; break;
     case 'jail': sendJail(room, player, '抽到惩罚卡'); break;
     case 'step': {
-      const N = tiles.length;
+      const N = OUTER_N;
       if (e.v > 0) { goToPos(room, player, (player.pos + e.v) % N, false); resolveTile(room, player); }
-      else { player.pos = (player.pos + e.v + N) % N; setMove(room, [player.pos], player); }
+      else { const old = player.pos; player.pos = (player.pos + e.v + N) % N; setMove(room, [player.pos], player, old); }
       break;
     }
     case 'item': player.items[e.item] = (player.items[e.item] || 0) + 1; break;
@@ -747,7 +921,7 @@ function applyCard(room, player, card) {
       player.money += e.v * n; checkBankrupt(room, player); break;
     }
     case 'gotoType': {
-      const N = tiles.length;
+      const N = OUTER_N;
       let j = player.pos;
       for (let k = 1; k <= N; k++) { const x = (player.pos + k) % N; if (tiles[x].type === e.type2) { j = x; break; } }
       goToPos(room, player, j, true); resolveTile(room, player); break;
@@ -844,7 +1018,7 @@ function resolveChoice(room, value) {
     const ev = g._forkEv, pick = ev && ev.o[Number(value)];
     if (pick) {
       label = pick.label;
-      const N = THEMES[room.theme].tiles.length;
+      const N = OUTER_N;
       const dest = (player.pos + pick.jump) % N;
       goToPos(room, player, dest, false);   // 生成新 moveSteps，前端播额外移动；不递归结算
       pushLog(room, `🛤️ ${player.name} 选了「${label}」，到【${THEMES[room.theme].tiles[dest].name}】。`);
@@ -1286,14 +1460,15 @@ io.on('connection', (socket) => {
   });
 
   /* v3.2 前进：掷骰后由当前玩家确认，才生成移动序列并结算 */
-  socket.on('confirmMove', () => {
+  socket.on('confirmMove', (payload) => {
     const room = findRoomBySocket(socket.id);
     if (!room || !room.game) return socket.emit('needResync');
     const g = room.game;
     if (g.phase !== 'await_move' || !g.pending) return;
     const player = room.players[g.pending.moverIdx];
     if (!player || player.id !== socket.id) return;
-    confirmMove(room, player);
+    const wantInner = !!(payload && payload.inner) && !!g.pending.canInner;
+    confirmMove(room, player, wantInner);
     step(room);
   });
 
@@ -1520,4 +1695,4 @@ server.on('error', (e) => {
   if (e.code === 'EADDRINUSE') console.error(`⚠️ 端口 ${PORT} 已被占用（可能已有实例在运行），本实例退出。`);
   else console.error('服务器错误:', e);
 });
-server.listen(PORT, () => console.log(`💕 双人游戏合集 v3.2 已启动: http://localhost:${PORT}`));
+server.listen(PORT, () => console.log(`💕 双人游戏合集 v3.3 已启动: http://localhost:${PORT}`));
