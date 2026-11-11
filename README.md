@@ -246,6 +246,7 @@ v3.1 落地的是**可见的外壳与数据接缝**：`GAME_KINDS` 注册表、`
 | **v4.0 花园协议层（本地）** | 建房带 `gameKind=garden` / `GAME_KINDS.garden` / `gardenBoard` 字段 / `gardenPublicState` 含 `boardVersion`+`token` / `gardenAction` 8 动作（种/装饰/浇水/合种树/签到/送花/留言/重置）/ 双端同步 / 金币与爱心结算 / 花园房不误触发大富翁 handler / 互动冷却按动作独立 / 大富翁全链路回归 | **46/46** |
 | **v4.0 真实浏览器双手机 E2E（本地）** | 390×844 双端：首页统称标题与 2 款游戏卡、花园 2.5D 等距菱形、SVG 植物/装饰/道具/HUD/动作图标、双端同步种植、放大棋盘（31→59px、地名 9→13px、零错位）、长地名与点击全名、互动连点即时、两页均无横向溢出、零 JS 报错 | **46/46** |
 | **v4.0 语法检查** | `node --check server.js` / `node --check public/game.js` | 通过 |
+| **v4.0 线上真实地址冒烟** | Render 线上 `https://love-game-8nrq.onrender.com`：`app-version=v4.0` / `css?v=8` / `js?v=7` / 首页统称与花园卡 / 花园 2.5D 样式与渲染模块、建房→加入→开始→36 格布局→`token`/`gardenBoard`、种植扣币、B 端实时同步、合种树需两人都添土、比心涨爱心不崩（`setFx` 修复回归）、长椅留言、大富翁开局与掷骰两步走回归、互动连点不抛错 | **22/22** |
 
 ---
 
@@ -292,8 +293,9 @@ v3.1 落地的是**可见的外壳与数据接缝**：`GAME_KINDS` 注册表、`
 
 - `app-version=v4.0`、`style.css?v=8`、`game.js?v=7`；`BOARD_VERSION` 保持 6（大富翁存档不作废），
   花园用 `GARDEN_VERSION=1`；启动日志同步 v4.0。
-- 本地：协议层 **46/46**、真实浏览器双手机 E2E **46/46**、`node --check` 通过；
-  线上：推 GitHub + Render Deploy Hook 后复核首页版本标记与两款游戏入口。
+- 本地：协议层 **46/46**、真实浏览器双手机 E2E **46/46**、`node --check` 通过。
+- 线上：推 GitHub（`b910d60d0b`，5 文件）+ Render Deploy Hook（`dep-dbq4tul6e07s73c56rv0`）后，
+  轮询确认首页切到 v4.0（第 3 次探测命中），线上真实地址冒烟 **22/22 全绿**（两款游戏全链路）。
 
 ### v3.3（2026-11-11）— 地图层优化：双环 + 岔路抄近道 + 格子重叠根治
 
