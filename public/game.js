@@ -433,7 +433,7 @@ function tryRender() {
   hideOverlay();
   show('game');
   paintGdIcons($('game'));        // v4.0：互动条等图标用 SVG，避免 emoji 豆腐块
-  if (!boardBuilt) buildBoard();
+  if (!boardBuilt) { buildBoard(); applyZoomPref(); }  // v4.2：进房自动恢复放大偏好
   renderTop();
   renderPlayers();
   renderBoardDyn();
@@ -754,9 +754,11 @@ function buildBoard() {
     const img = TILE_IMG[t.type] || TILE_IMG.property;
     const bar = t.group && groups[t.group] ? `<div class="tbar" style="background:${groups[t.group].color}"></div>` : '';
     const price = t.price != null && ['property', 'station', 'utility'].includes(t.type) ? `<div class="tprice">${t.price}</div>` : '';
-    const nm = t.short || t.name.replace(/^[^\u4e00-\u9fa5a-zA-Z]+\s*/, '');
-    // v4.0：按地名长度自适应字号；长名点一下弹完整地点名（含类型/价格）
-    const lenCls = nm.length >= 6 ? ' len6' : nm.length === 5 ? ' len5' : nm.length === 4 ? ' len4' : nm.length === 3 ? ' len3' : '';
+    // v4.2：改用完整地名（去掉 emoji 前缀），不再用被 shortName 截成 4 字的 short
+    const nm = String(t.name).replace(/^[^\u4e00-\u9fa5a-zA-Z]+\s*/, '') || t.short || '';
+    // v4.2：按完整地名长度精确分档，字号 shrink 到「严格不超过格宽」，保证单行完整且不横向溢出到相邻格
+    const L = nm.length;
+    const lenCls = L >= 6 ? ' len6' : L === 5 ? ' len5' : L === 4 ? ' len4' : L <= 2 ? ' len2' : '';
     d.title = t.name + (t.price != null ? ' · ' + t.price : '');
     d._fullName = t.name;
     d.innerHTML = `${bar}<div class="ti"><img src="/assets/${img}" alt="" loading="lazy"></div><div class="tn${lenCls}">${escapeHtml(nm)}</div>${price}<div class="towner"></div><div class="tlv"></div>${t.fork ? '<div class="tfork" title="岔路口">🛤️</div>' : ''}`;
@@ -1340,9 +1342,20 @@ $('moneyOpts') && $('moneyOpts').addEventListener('click', (e) => {
 $('moneyCancel') && $('moneyCancel').addEventListener('click', () => $('moneySheet').classList.add('hidden'));
 $('moneySheet') && $('moneySheet').addEventListener('click', (e) => { if (e.target.id === 'moneySheet') $('moneySheet').classList.add('hidden'); });
 
-/* v4.0 放大棋盘：等比放大到可滚动，格子与地名一起变大，按百分比定位零错位 */
+/* v4.2 放大棋盘：等比放大到可滚动，格子与地名一起变大，按百分比定位零错位。
+ * 选择记到 localStorage，之后进房自动应用，不用每次手动点。 */
+const ZOOM_KEY = 'love_board_zoom_v42';
+function applyZoomPref() {
+  let on = false;
+  try { on = localStorage.getItem(ZOOM_KEY) === '1'; } catch (e) {}
+  const f = $('boardFrame'), z = $('zoomBtn');
+  if (!f) return;
+  f.classList.toggle('zoomed', on);
+  if (z) { z.classList.toggle('on', on); z.textContent = on ? '还原棋盘' : '放大棋盘 · 看清地名'; }
+}
 $('zoomBtn') && $('zoomBtn').addEventListener('click', () => {
   const f = $('boardFrame'); const z = f.classList.toggle('zoomed');
+  try { localStorage.setItem(ZOOM_KEY, z ? '1' : '0'); } catch (e) {}
   $('zoomBtn').classList.toggle('on', z);
   $('zoomBtn').textContent = z ? '还原棋盘' : '放大棋盘 · 看清地名';
   beep('click');

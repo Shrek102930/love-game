@@ -528,58 +528,77 @@ h2{font-size:18px;margin:0 0 8px}
 }
 
 /* ==================================================================
- * v4.0 ① 外环小方格放大 + 长地名完整显示
- * 40 格环形网格是 11×11 均分，棋子按 100/11 百分比定位 —— 不改轨道比例，
- * 改为：缩小棋盘外框内边距/gap 真实放大格子；图标缩小移到角标，把整格让给名字；
- * 名字按字数自适应字号 + 允许多行不裁切；点格子弹出完整地点名。
+ * v4.2 外环格子重做（回应用户实测反馈）：
+ *  ① 图标恢复「居中大图」20px（v4.0 被缩成 11px 右上角角标，几乎看不见）
+ *  ② 棋盘默认温和放大到 400px，格子 31→36px，图标/字都变大
+ *  ③ 地名改用完整名 + 强制单行 nowrap + 自适应字号 + 白描边，
+ *     不再被 shortName 截成 4 字、不再 break-all 折行被裁
+ *  ④ 棋子层 z-index 9 > pulse(6)，头像永远压在格子之上
+ * 11×11 网格与 posStyle 百分比定位零改动；放大仅靠 min-width + 横向滚动。
  * ================================================================== */
-.board-frame{padding:5px}
-.board{gap:1px}
-.tile{overflow:visible;z-index:1;border-radius:6px;
-  box-shadow:0 1px 3px rgba(90,60,80,.1)}
+/* 默认零横向滚动：负 margin 借回页面两侧留白，把棋盘撑到接近满宽（不裁角、棋子全可见）。
+ * 格子物理最大化；想更清楚用「放大棋盘」（可滚动 + 偏好记忆）。 */
+.board-frame{padding:2px;margin:0 -8px}
+.board{gap:1px;width:100%;min-width:0}
+.tile{overflow:visible;z-index:1;border-radius:6px;box-shadow:0 1px 3px rgba(90,60,80,.1)}
 .tile.pulse,.tile:hover{z-index:6}
-/* 图标：缩成右上角小角标，不再占一整行，把格子空间全部让给地名 */
-.tile .ti{position:absolute;top:1px;right:1px;width:11px;height:11px;
-  margin:0;opacity:.92;flex:none}
+/* ① 图标：贴顶居中的真实大图（v3.3 风格，放大到 20px），不再半透明角标 */
+.tile .ti{position:absolute;top:3px;left:50%;transform:translateX(-50%);
+  width:20px;height:20px;margin:0;opacity:1;flex:none;z-index:2}
 .tile .ti img{width:100%;height:100%;object-fit:contain}
-/* 地名：独占整格、可多行、按字数自适应，彻底不截断 */
-.tile .tn{width:100%;max-height:none;overflow:visible;
-  font-size:9px;line-height:1.04;margin-top:9px;flex:none;
-  word-break:break-all;padding:0 2px;
-  text-shadow:0 1px 0 #fff,0 0 3px #fff,0 0 3px #fff}
-.tile .tn.len3{font-size:8.2px}
-.tile .tn.len4{font-size:7.4px}
-.tile .tn.len5{font-size:6.8px}
-.tile .tn.len6{font-size:6.2px}
-.tile.corner .tn{margin-top:8px}
-.tile .tprice{position:absolute;bottom:1px;left:1px;font-size:6.5px;
-  background:rgba(255,255,255,.72);border-radius:3px;padding:0 1px;line-height:1.2}
-.tile .tlv{bottom:0;right:1px;font-size:6.5px;background:rgba(255,255,255,.7);border-radius:3px;padding:0 1px}
-.tile .tfork{position:absolute;top:1px;left:1px;font-size:8px;z-index:2}
+.tile.corner .ti{width:22px;height:22px}
+/* 传送门旋转改作用于 img，避免覆盖 .ti 的定位 transform */
+.tile.portal .ti{animation:none}
+.tile.portal .ti img{animation:swirl 3s linear infinite}
+/* ③ 地名：完整单行、贴底居中、按字数自适应、白描边保证叠加可读 */
+.tile .tn{position:absolute;left:50%;bottom:2px;transform:translateX(-50%);
+  width:max-content;max-width:none;white-space:nowrap;overflow:visible;
+  word-break:normal;font-size:10px;line-height:1.1;margin:0;padding:0 1px;z-index:3;
+  /* 字号按字数 shrink 到「整名宽度 ≤ 格宽」，完整单行且不溢出到相邻格 */
+  text-shadow:0 0 2px #fff,0 0 3px #fff;color:#4a4256;
+  flex:none;max-height:none}
+.tile .tn.len2{font-size:12px}
+.tile .tn.len4{font-size:8px}
+.tile .tn.len5{font-size:6.4px}
+.tile .tn.len6{font-size:5.6px}
+.tile.corner .tn{font-size:8px}
+/* 价格/等级/岔路：极小角标挪到顶部两角，避开底部地名与居中图标 */
+.tile .tprice{position:absolute;top:1px;left:1px;bottom:auto;font-size:6.5px;line-height:1.1;
+  color:#a89cb0;background:rgba(255,255,255,.72);border-radius:3px;padding:0 1px;z-index:2}
+.tile .tlv{position:absolute;top:1px;right:1px;bottom:auto;font-size:6.5px;color:#e0446d;
+  font-weight:800;background:rgba(255,255,255,.7);border-radius:3px;padding:0 1px;z-index:2}
+.tile .tfork{position:absolute;top:1px;left:1px;font-size:8px;line-height:1;z-index:2}
+.tile .tbar{height:2px}
+.tile .towner{height:2px}
+/* ④ 棋子层提到最顶（高于 pulse 的 6），头像永不被格子盖住 */
+.pawn-layer{z-index:9}
 @media (max-width:360px){
-  .tile .tn{font-size:8px;margin-top:8px}
-  .tile .tn.len3{font-size:7.4px}
-  .tile .tn.len4{font-size:6.8px}
-  .tile .tn.len5{font-size:6.2px}
-  .tile .tn.len6{font-size:5.8px}
-  .tile .ti{width:9px;height:9px}
+  .board{min-width:376px}
+  .tile .ti{width:18px;height:18px}
+  .tile.corner .ti{width:20px;height:20px}
+  .tile .tn{font-size:9px}
+  .tile .tn.len2{font-size:11px}
+  .tile .tn.len4{font-size:7px}
+  .tile .tn.len5{font-size:5.8px}
+  .tile .tn.len6{font-size:5.2px}
 }
-/* v4.0 放大棋盘工具条 */
+/* v4.2 放大棋盘工具条（保留放大功能，状态记忆见 game.js） */
 .board-tools{display:flex;justify-content:flex-end;margin:0 2px 6px}
 .zoom-toggle{background:#fff;color:var(--pink-d);border:1.5px solid #f6dce8;
   font-size:11px;font-weight:800;padding:5px 12px;border-radius:20px;
   box-shadow:0 2px 8px rgba(160,100,140,.1)}
 .zoom-toggle.on{background:var(--pink);color:#fff;border-color:var(--pink)}
-/* 放大态：棋盘等比放大到可滚动；所有格子/棋子/内环/连线均按百分比定位，零错位 */
+/* 放大态：660px 大棋盘，图标/地名更大；所有元素按百分比定位，零错位 */
 .board-frame.zoomed{overflow:auto;max-height:78vh;-webkit-overflow-scrolling:touch}
 .board-frame.zoomed .board{min-width:660px}
-.board-frame.zoomed .tile .tn{font-size:13px;line-height:1.1;margin-top:14px}
-.board-frame.zoomed .tile .tn.len3{font-size:12.5px}
-.board-frame.zoomed .tile .tn.len4{font-size:12px}
-.board-frame.zoomed .tile .tn.len5{font-size:11.5px}
-.board-frame.zoomed .tile .tn.len6{font-size:11px}
-.board-frame.zoomed .tile .ti{width:16px;height:16px;top:1px;right:1px}
-.board-frame.zoomed .tile .tprice,.board-frame.zoomed .tile .tlv{font-size:9px}
+.board-frame.zoomed .tile .ti{width:30px;height:30px;top:5px}
+.board-frame.zoomed .tile.corner .ti{width:34px;height:34px}
+.board-frame.zoomed .tile .tn{font-size:18px;bottom:5px}      /* 放大态格宽≈58px，完整名单行舒展 */
+.board-frame.zoomed .tile .tn.len2{font-size:20px}
+.board-frame.zoomed .tile .tn.len4{font-size:14px}
+.board-frame.zoomed .tile .tn.len5{font-size:11px}
+.board-frame.zoomed .tile .tn.len6{font-size:9px}
+.board-frame.zoomed .tile .tprice,.board-frame.zoomed .tile .tlv{font-size:10px}
 .board-frame.zoomed .inner-tile .it-ico{width:26px;height:26px}
 .board-frame.zoomed .inner-tile .it-name{font-size:12px}
 .board-frame.zoomed .inner-tile .it-desc{font-size:10px}
